@@ -1,0 +1,147 @@
+"""ResNet implementation."""
+
+from typing import Optional, Sequence, Type, Union
+
+import gin
+import torch
+from torch import nn
+from torch.nn.modules import batchnorm
+from torch.nn.modules import dropout
+
+from ..blocks import blocks
+from ..blocks import transformers
+from .. import utils
+
+
+@gin.register(module="models")
+class ResNet(nn.Module):
+    def __init__(self,
+                 in_channels: int,
+                 out_channels: int = 1,
+                 list_depth: Sequence[int] = [3, 4, 6, 3],
+                 base_filters: int = 32,
+                 kernel_size: Union[int, Sequence[int]] = 3,
+                 strided_kernel_size: Union[int, Sequence[int]] = 2,
+                 stride: Union[int, Sequence[int]] = 2,
+                 normalization: Optional[Type[batchnorm._NormBase]
+                                         ] = nn.BatchNorm2d,
+                 activation: Type[nn.Module] = nn.ReLU,
+                 out_activation: Optional[Type[nn.Module]] = None,
+                 dropout: Optional[Type[dropout._DropoutNd]] = None,
+                 res_block_cls: Union[Type[blocks.ResNetBlock],
+                                      Type[blocks.BottleNeckResNetBlock]
+                                      ] = blocks.BottleNeckResNetBlock,
+                 class_attention_block: Optional[Type[transformers.ClassAttentionBlock]] = None,
+                 dim: int = 2,
+                 *args,
+                 **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.base_filters = base_filters
+
+        if issubclass(res_block_cls, blocks.BottleNeckResNetBlock):
+            self.base_filters *= 4
+
+        if type(kernel_size) == int:
+            kernel_size = [kernel_size for i in range(dim)]
+        if type(strided_kernel_size) == int:
+            strided_kernel_size = [strided_kernel_size for i in range(dim)]
+
+        self.input_conv = blocks.ConvUnit(
+            utils.get_conv_nd(dim)(
+                in_channels=in_channels,
+                out_channels=self.base_filters,
+                kernel_size=strided_kernel_size,
+                padding=[k//2 for k in strided_kernel_size],
+                stride=stride,
+            ),
+            normalization=normalization(self.base_filters),
+            activation=activation(),
+            dropout=(dropout() if dropout is not None else None),
+        )
+
+        self.pool = utils.get_maxpool_nd(dim)(
+            kernel_size=strided_kernel_size,
+            stride=stride,
+            padding=[k//2 for k in strided_kernel_size],
+        )
+
+        self.res_convs = []
+
+        for i, d in enumerate(list_depth):
+            self.res_convs.extend(
+                [res_block_cls(in_channels=self.base_filters*2**i,
+                               out_channels=self.base_filters*2**i,
+                               kernel_size=kernel_size,
+                               strided_kernel_size=strided_kernel_size,
+                               stride=1,
+                               normalization=normalization,
+                               activation=activation,
+                               out_activation=activation,
+                               dropout=dropout,
+                               dim=dim) for j in range(d)]
+            )
+            if i < len(list_depth)-1:
+                self.res_convs.append(
+                    res_block_cls(in_channels=self.base_filters*2**i,
+                                  out_channels=self.base_filters*2**(i+1),
+                                  kernel_size=kernel_size,
+                                  strided_kernel_size=strided_kernel_size,
+                                  stride=stride,
+                                  normalization=normalization,
+                                  activation=activation,
+                                  out_activation=activation,
+                                  dropout=dropout,
+                                  dim=dim)
+                )
+
+        self.res_convs = nn.Sequential(*self.res_convs)
+
+        embed_dim = self.base_filters*2**(len(list_depth)-1)
+        if class_attention_block is not None:
+            self.final_pool = class_attention_block(
+                in_features=embed_dim)
+            self.cls_token = nn.Parameter(torch.zeros((1, 1, embed_dim)))
+            self.last_norm = nn.LayerNorm(embed_dim)
+            nn.init.normal_(self.cls_token, std=.02)
+        else:
+            self.final_pool = utils.get_adaptive_averagepool_nd(dim)(
+                output_size=[1 for i in range(dim)])
+
+        self.fc = nn.Linear(
+            in_features=embed_dim,
+            out_features=out_channels) if out_channels != 0 else nn.Identity()
+
+        self.act = (out_activation() if out_activation
+                    is not None else None)
+
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.normal_(m.weight, std=.02)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+
+    @torch.jit.ignore
+    def no_weigh_decay(self) -> set:
+        return {'cls_token'}
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.input_conv(x)
+        x = self.pool(x)
+        x = self.res_convs(x)
+        if isinstance(self.final_pool, transformers.ClassAttentionBlock):
+            x = x.flatten(2, -1).transpose(1, 2)  # BxNxE
+            cls_tokens = self.cls_token.expand(x.shape[0], -1, -1)
+            x = torch.cat((cls_tokens, x), dim=1)  # BxN+1xE
+        x = self.final_pool(x)
+        if isinstance(self.final_pool, transformers.ClassAttentionBlock):
+            x = self.last_norm(x)[:, 0]
+        x = x.flatten(1, -1)
+        x = self.fc(x)
+        if self.act is not None:
+            x = self.act(x)
+        return x
