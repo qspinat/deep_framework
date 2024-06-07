@@ -1,3 +1,5 @@
+"""Variations of MLP models."""
+
 import torch
 
 import gin

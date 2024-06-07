@@ -1,47 +1,57 @@
 """UNet implementation."""
 
-import functools
-from typing import Optional, Sequence, Type, Union
+from typing import Sequence
 
 import gin
 import torch
 from torch import nn
-from torch.nn.modules import dropout
 from torch.nn.modules import pooling
 
 from ..blocks import blocks
-from ..blocks import transformers
 from .. import utils
-
-
-def get_maxpool_nd(dim: int) -> pooling._MaxPoolNd:
-    return getattr(nn, f"MaxPool{dim}d")
-
-
-def get_adaptive_averagepool_nd(dim: int) -> pooling._MaxPoolNd:
-    return getattr(nn, f"AdaptiveAvgPool{dim}d")
 
 
 @gin.register(module="models")
 class UNet(nn.Module):
-    def __init__(self,
-                 in_channels: int,
-                 out_channels: int,
-                 base_filters: int = 32,
-                 kernel_size: int | Sequence[int] = 3,
-                 depth: int = 2,
-                 conv_per_level: int = 2,
-                 stride: int | Sequence[int] = 2,
-                 normalization: type[nn.Module] = nn.BatchNorm2d,
-                 linear_upsampling: bool = False,
-                 transformer_block: type[nn.Module] | None = None,
-                 activation: type[nn.Module] = nn.ReLU,
-                 out_activation: type[nn.Module] = nn.Identity,
-                 dropout: type[nn.modules.dropout._DropoutNd] | None = None,
-                 dim: int = 2,
-                 *args,
-                 **kwargs
-                 ) -> None:
+    """UNet model."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        base_filters: int = 32,
+        kernel_size: int | Sequence[int] = 3,
+        depth: int = 2,
+        conv_per_level: int = 2,
+        stride: int | Sequence[int] = 2,
+        normalization: type[nn.Module] = nn.BatchNorm2d,
+        linear_upsampling: bool = False,
+        transformer_block: type[nn.Module] | None = None,
+        activation: type[nn.Module] = nn.ReLU,
+        out_activation: type[nn.Module] = nn.Identity,
+        dropout: type[nn.modules.dropout._DropoutNd] | None = None,
+        dim: int = 2,
+        *args,
+        **kwargs
+    ) -> None:
+        """Constructor.
+
+        Args:
+            in_channels (int): Number of input channels.
+            out_channels (int): Number of output channels.
+            base_filters (int): Number of base filters. Default to 32.
+            kernel_size (int | Sequence[int]): Kernel size. Default to 3.
+            depth (int): Depth of the UNet. Default to 2.
+            conv_per_level (int): Number of convolutional layers per level. Default to 2.
+            stride (int | Sequence[int]): Stride. Default to 2.
+            normalization (torch.nn.Module): Normalization layer. Default to BatchNorm2d.
+            linear_upsampling (bool): Whether to use linear upsampling or not. Default to False.
+            transformer_block (torch.nn.Module | None): Transformer block. Default to None.
+            activation (torch.nn.Module): Activation layer. Default to ReLU.
+            out_activation (torch.nn.Module): Output activation layer. Default to Identity.
+            dropout (torch.nn.modules.dropout._DropoutNd | None): Dropout layer. Default to None.
+            dim (int): Dimension of the input. Default to 2.
+        """
         super().__init__(*args, **kwargs)
 
         if type(kernel_size) == int:
@@ -138,6 +148,8 @@ class UNet(nn.Module):
 
 
 class DownBlock(nn.Module):
+    """UNet down block."""
+
     def __init__(
         self,
         in_channels: int,
@@ -153,6 +165,20 @@ class DownBlock(nn.Module):
         *args,
         **kwargs
     ) -> None:
+        """Constructor.
+
+        Args:
+            in_channels (int): Number of input channels.
+            out_channels (int): Number of output channels.
+            kernel_size (Sequence[int]): Kernel size.
+            stride (Sequence[int]): Stride.
+            n_convs (int): Number of convolutional layers.
+            normalization (torch.nn.Module): Normalization layer.
+            transformer_block (torch.nn.Module): Transformer block.
+            dropout (torch.nn.modules.dropout._DropoutNd): Dropout layer.
+            activation (torch.nn.Module): Activation layer.
+            dim (int): Dimension of the input.
+        """
         super().__init__(*args, **kwargs)
         downsample = any([s != 1 for s in stride])
         self.downsample = (
@@ -192,12 +218,13 @@ class DownBlock(nn.Module):
 
 
 class UpBlock(nn.Module):
+    """UNet up block."""
+
     def __init__(
         self,
         in_channels: int,
         out_channels: int,
         kernel_size: Sequence[int],
-        upsample: bool,
         upsample_factors: tuple[int],
         linear_upsampling: bool,
         n_convs: int,
@@ -208,6 +235,20 @@ class UpBlock(nn.Module):
         *args,
         **kwargs
     ) -> None:
+        """Constructor.
+
+        Args:
+            in_channels (int): Number of input channels.
+            out_channels (int): Number of output channels.
+            kernel_size (Sequence[int]): Kernel size.
+            upsample_factors (tuple[int]): Upsample factors.
+            linear_upsampling (bool): Whether to use linear upsampling or not.
+            n_convs (int): Number of convolutional layers.
+            normalization (torch.nn.Module): Normalization layer.
+            activation (torch.nn.Module): Activation layer.
+            dropout (torch.nn.modules.dropout._DropoutNd): Dropout layer.
+            dim (int): Dimension of the input.
+        """
         super().__init__(*args, **kwargs)
         if linear_upsampling:
             self.upsample = nn.Sequential(

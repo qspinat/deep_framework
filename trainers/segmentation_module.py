@@ -1,16 +1,8 @@
 """Supervised lightning module class"""
 
-import functools
-from typing import Any, Sequence
-
 import gin
-from kornia import augmentation
-import lightning as L
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 import torch
-from torch import nn
-from torch import optim
-import torchmetrics
 
 from .supervised_module import SupervisedLModule
 

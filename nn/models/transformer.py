@@ -1,3 +1,5 @@
+""" Transformer model implementation. """
+
 import gin
 import torch
 from torch import nn
@@ -8,6 +10,8 @@ from ..blocks import transformers
 
 @gin.register(module="models")
 class Transformer(nn.Module):
+    """Transformer model implementation."""
+
     def __init__(
         self,
         in_features: int,
@@ -19,6 +23,17 @@ class Transformer(nn.Module):
         *args,
         **kwargs
     ) -> None:
+        """Constructor.
+
+        Args:
+            in_features (int): Number of input features.
+            transformer_block (type[nn.TransformerEncoder]): Transformer block. Default to None.
+            class_attention_block (type[transformers.ClassAttentionBlock]): Class Attention Block. 
+                Default to None.
+            mlp (type[mlp.MLP]): Multi Layer Perceptron.
+            normalization (torch.nn.Module): Normalization layer. Default to LayerNorm.
+            activation (torch.nn.Module): Activation layer. Default to ReLU.
+        """
         super().__init__(*args, **kwargs)
         transformer_sequence = []
         if transformer_block is not None:

@@ -1,7 +1,7 @@
 """Supervised lightning module class"""
 
 import functools
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 import gin
 from kornia import augmentation
@@ -15,6 +15,8 @@ import torchmetrics
 
 @gin.register(module="trainers")
 class SupervisedLModule(L.LightningModule):
+    """Supervised lightning module class. Used to train supervised models."""
+
     def __init__(
             self,
             model: type[nn.Module],
@@ -25,14 +27,33 @@ class SupervisedLModule(L.LightningModule):
             target_label: str,
             optimizer: type[optim.Optimizer] | None,
             lr_scheduler: type[torch.optim.lr_scheduler.LRScheduler],
-            data_aug_gpu: Sequence[augmentation.AugmentationBase2D] | None = None,
+            data_aug_gpu: Sequence[augmentation.AugmentationBase2D |
+                                   augmentation.AugmentationBase3D] | None = None,
             data_aug_batch_size: int = -1,
-            activation_metric: callable = functools.partial(
+            activation_metric: Callable = functools.partial(
                 torch.softmax, dim=-1),
             flatten_target: bool = False,
             *args,
             **kwargs,
     ) -> None:
+        """Constructor.
+
+        Args:
+            model (torch.nn.Module): Model to train.
+            losses (Sequence[tuple[torch.nn.Module, float]]): Losses to use.
+            metrics (Sequence[torch.nn.Module]): Metrics to use.
+            torchmetrics (Sequence[torchmetrics.Metric]): Torchmetrics to use.
+            input_label (str): Input label.
+            target_label (str): Target label.
+            optimizer (torch.optim.Optimizer): Optimizer to use.
+            lr_scheduler (torch.optim.lr_scheduler.LRScheduler): Learning rate scheduler to use.
+            data_aug_gpu (Sequence[kornia.AugmentationBase2D | kornia.AugmentationBase2D]): 
+                Data augmentation to use on GPU.
+            data_aug_batch_size (int): Data augmentation batch size. If less than 0, the batch size is the 
+                same as the input batch size. Default to -1.
+            activation_metric (callable): Activation to use before metric. Default to softmax.
+            flatten_target (bool): Whether to flatten the target or not. Default to False.
+        """
         super().__init__(*args, **kwargs)
         self.model = model()
         self.loss_names = []
@@ -64,10 +85,11 @@ class SupervisedLModule(L.LightningModule):
         self.act_metric = activation_metric
         self.flatten_target = flatten_target
 
-    def on_after_batch_transfer(self,
-                                batch: dict[str, torch.Tensor],
-                                dataloader_idx: int
-                                ) -> dict[str, torch.Tensor]:
+    def on_after_batch_transfer(
+        self,
+        batch: dict[str, torch.Tensor],
+        dataloader_idx: int
+    ) -> dict[str, torch.Tensor]:
         if self.trainer.training:
             if self.data_aug_batch_size <= 0:
                 batch[self.input_label] = self.data_aug_gpu(
@@ -84,20 +106,23 @@ class SupervisedLModule(L.LightningModule):
                         batch[self.input_label][n_preds*bs:])
         return batch
 
-    def base_step(
+    def compute_and_log_losses(
         self,
-        batch: dict[str, torch.Tensor],
-        batch_idx: int,
-        log_label: str,
-        *args,
-        **kwargs,
-    ) -> STEP_OUTPUT:
-        x = batch[self.input_label]
-        device = x.device
-        if self.flatten_target:
-            target = batch[self.target_label].flatten()
-        pred = self.model(x)
-        loss = torch.zeros(1, dtype=x.dtype, device=device)
+        pred: torch.Tensor,
+        target: torch.Tensor,
+        log_label: str
+    ) -> torch.Tensor:
+        """Compute loss.
+
+        Args:
+            pred (torch.Tensor): Predictions.
+            target (torch.Tensor): Targets.
+            log_label (str): Log label.
+
+        Returns:
+            torch.Tensor: Loss.
+        """
+        loss = torch.zeros(1, dtype=pred.dtype, device=pred.device)
         for l_name, w in zip(self.loss_names, self.loss_weights):
             l = self.__getattr__(l_name)
             _loss = l(pred, target)
@@ -113,6 +138,20 @@ class SupervisedLModule(L.LightningModule):
                  on_epoch=True,
                  on_step=True,
                  prog_bar=True)
+
+    def compute_and_log_metrics(
+            self,
+            pred: torch.Tensor,
+            target: torch.Tensor,
+            log_label: str
+    ) -> None:
+        """Compute and log metrics.
+
+        Args:
+            pred (torch.Tensor): Predictions.
+            target (torch.Tensor): Targets.
+            log_label (str): Log label.
+        """
         for m_name in self.metric_names:
             m = self.__getattr__(m_name)
             self.log(
@@ -122,12 +161,36 @@ class SupervisedLModule(L.LightningModule):
                 on_step=False,
             )
         for m_name in self.torchmetric_names:
-            m = self.__getattr__(f"{log_label}_{m_name}")
+            m: torchmetrics.Metric = self.__getattr__(
+                f"{log_label}_{m_name}")
             m.update(self.act_metric(pred), target)
             self.log(f'{log_label}.{m_name}',
                      m,
                      on_epoch=True,
                      on_step=False)
+
+    def base_step(
+        self,
+        batch: dict[str, torch.Tensor],
+        batch_idx: int,
+        log_label: str,
+        *args,
+        **kwargs,
+    ) -> STEP_OUTPUT:
+        x = batch[self.input_label]
+        if self.flatten_target:
+            target = batch[self.target_label].flatten()
+        pred = self.model(x)
+        loss = self.compute_and_log_losses(
+            pred=pred,
+            target=target,
+            log_label=log_label
+        )
+        self.compute_and_log_metrics(
+            pred=pred,
+            target=target,
+            log_label=log_label
+        )
         return loss
 
     def training_step(

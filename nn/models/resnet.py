@@ -1,6 +1,6 @@
 """ResNet implementation."""
 
-from typing import Optional, Sequence, Type, Union
+from typing import Sequence
 
 import gin
 import torch
@@ -20,18 +20,17 @@ class ResNet(nn.Module):
                  out_channels: int = 1,
                  list_depth: Sequence[int] = [3, 4, 6, 3],
                  base_filters: int = 32,
-                 kernel_size: Union[int, Sequence[int]] = 3,
-                 strided_kernel_size: Union[int, Sequence[int]] = 2,
-                 stride: Union[int, Sequence[int]] = 2,
-                 normalization: Optional[Type[batchnorm._NormBase]
-                                         ] = nn.BatchNorm2d,
-                 activation: Type[nn.Module] = nn.ReLU,
-                 out_activation: Optional[Type[nn.Module]] = None,
-                 dropout: Optional[Type[dropout._DropoutNd]] = None,
-                 res_block_cls: Union[Type[blocks.ResNetBlock],
-                                      Type[blocks.BottleNeckResNetBlock]
-                                      ] = blocks.BottleNeckResNetBlock,
-                 class_attention_block: Optional[Type[transformers.ClassAttentionBlock]] = None,
+                 kernel_size: int | Sequence[int] = 3,
+                 strided_kernel_size: int | Sequence[int] = 2,
+                 stride: int | Sequence[int] = 2,
+                 normalization: type[batchnorm._NormBase] | None = nn.BatchNorm2d,
+                 activation: type[nn.Module] = nn.ReLU,
+                 out_activation: type[nn.Module] | None = None,
+                 dropout: type[dropout._DropoutNd] | None = None,
+                 res_block_cls: (
+                     type[blocks.ResNetBlock] | type[blocks.BottleNeckResNetBlock]
+                 ) = blocks.BottleNeckResNetBlock,
+                 class_attention_block: type[transformers.ClassAttentionBlock] | None = None,
                  dim: int = 2,
                  *args,
                  **kwargs) -> None:
@@ -68,31 +67,31 @@ class ResNet(nn.Module):
         self.res_convs = []
 
         for i, d in enumerate(list_depth):
-            self.res_convs.extend(
-                [res_block_cls(in_channels=self.base_filters*2**i,
-                               out_channels=self.base_filters*2**i,
-                               kernel_size=kernel_size,
-                               strided_kernel_size=strided_kernel_size,
-                               stride=1,
-                               normalization=normalization,
-                               activation=activation,
-                               out_activation=activation,
-                               dropout=dropout,
-                               dim=dim) for j in range(d)]
-            )
+            self.res_convs.extend([res_block_cls(
+                in_channels=self.base_filters*2**i,
+                out_channels=self.base_filters*2**i,
+                kernel_size=kernel_size,
+                strided_kernel_size=strided_kernel_size,
+                stride=1,
+                normalization=normalization,
+                activation=activation,
+                out_activation=activation,
+                dropout=dropout,
+                dim=dim
+            ) for j in range(d)])
             if i < len(list_depth)-1:
-                self.res_convs.append(
-                    res_block_cls(in_channels=self.base_filters*2**i,
-                                  out_channels=self.base_filters*2**(i+1),
-                                  kernel_size=kernel_size,
-                                  strided_kernel_size=strided_kernel_size,
-                                  stride=stride,
-                                  normalization=normalization,
-                                  activation=activation,
-                                  out_activation=activation,
-                                  dropout=dropout,
-                                  dim=dim)
-                )
+                self.res_convs.append(res_block_cls(
+                    in_channels=self.base_filters*2**i,
+                    out_channels=self.base_filters*2**(i+1),
+                    kernel_size=kernel_size,
+                    strided_kernel_size=strided_kernel_size,
+                    stride=stride,
+                    normalization=normalization,
+                    activation=activation,
+                    out_activation=activation,
+                    dropout=dropout,
+                    dim=dim
+                ))
 
         self.res_convs = nn.Sequential(*self.res_convs)
 
@@ -111,8 +110,7 @@ class ResNet(nn.Module):
             in_features=embed_dim,
             out_features=out_channels) if out_channels != 0 else nn.Identity()
 
-        self.act = (out_activation() if out_activation
-                    is not None else None)
+        self.act = out_activation() if out_activation is not None else None
 
         self.apply(self._init_weights)
 

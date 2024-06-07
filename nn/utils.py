@@ -1,3 +1,5 @@
+""" This module contains utility functions for the nn module. """
+
 from torch import nn
 
 
