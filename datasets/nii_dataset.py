@@ -34,6 +34,7 @@ class NiiDataset(bd.BaseDataset):
                  db_path: str,
                  input_vol_keys: list[str],
                  target_vol_keys: list[str],
+                 label_keys: list[str],
                  csv_dataset: cd.CSVDataset | None = None,
                  patients_txt: str | None = None,
                  preprocess: Sequence[tio.Transform] | None = None,
@@ -60,6 +61,7 @@ class NiiDataset(bd.BaseDataset):
         self.data_aug = tio.Compose(self.data_aug)
         self.input_vol_keys = input_vol_keys
         self.target_vol_keys = target_vol_keys
+        self.label_keys = label_keys
         self.csv_dataset = csv_dataset
 
         self._uids = None
@@ -96,6 +98,8 @@ class NiiDataset(bd.BaseDataset):
         def read_vol(key: str):
             nii_path = os.path.join(
                 self.db_path, key, f"{uid}.nii")
+            if key in self.label_keys:
+                return tio.LabelMap(nii_path)
             return tio.ScalarImage(nii_path)
         with concurrent.futures.ThreadPoolExecutor(
                 max_workers=len(self.input_vol_keys)) as executor:
@@ -107,7 +111,9 @@ class NiiDataset(bd.BaseDataset):
         def read_mask(key: str):
             nii_path = os.path.join(
                 self.db_path, key, f"{uid}.nii.gz")
-            return tio.LabelMap(nii_path)
+            if key in self.label_keys:
+                return tio.LabelMap(nii_path)
+            return tio.ScalarImage(nii_path)
         with concurrent.futures.ThreadPoolExecutor(
                 max_workers=len(self.target_vol_keys)) as executor:
             masks = executor.map(read_mask, self.target_vol_keys)
