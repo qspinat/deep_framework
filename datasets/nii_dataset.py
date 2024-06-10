@@ -30,16 +30,17 @@ class NiiDataset(bd.BaseDataset):
         uids (list): List of unique identifiers.
     """
 
-    def __init__(self,
-                 db_path: str,
-                 input_vol_keys: list[str],
-                 target_vol_keys: list[str],
-                 label_keys: list[str],
-                 csv_dataset: cd.CSVDataset | None = None,
-                 patients_txt: str | None = None,
-                 preprocess: Sequence[tio.Transform] | None = None,
-                 data_aug: Sequence[tio.Transform] | None = None,
-                 ) -> None:
+    def __init__(
+        self,
+        db_path: str,
+        input_vol_keys: list[str],
+        target_vol_keys: list[str],
+        label_keys: list[str],
+        csv_dataset: cd.CSVDataset | None = None,
+        patients_txt: str | None = None,
+        preprocess: Sequence[tio.Transform] | None = None,
+        data_aug: Sequence[tio.Transform] | None = None,
+    ) -> None:
         """Constructor.
 
         Args:

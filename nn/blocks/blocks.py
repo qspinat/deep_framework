@@ -2,6 +2,7 @@
 
 from typing import Sequence
 
+import gin
 import torch
 from torch import nn
 from torch.nn.modules import batchnorm
@@ -42,6 +43,7 @@ class ConvUnit(nn.Sequential):
         super().__init__(*sequence, **kwargs)
 
 
+@gin.register(module="nn")
 class ResNetBlock(nn.Module):
     """Basic ResNet block. Composed of two convolutional units and a projection"""
 
@@ -136,6 +138,7 @@ class ResNetBlock(nn.Module):
         return x
 
 
+@gin.register(module="nn")
 class BottleNeckResNetBlock(nn.Module):
     """BottleNeck ResNet block. Composed of three convolutional units, the first and third 
     one having a kernel size of 1, and a projection."""

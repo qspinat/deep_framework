@@ -84,6 +84,9 @@ class BaseDataset(data.Dataset, abc.ABC):
     def is_test(self) -> bool:
         return self.mode == "test"
 
+    def __len__(self) -> int:
+        return len(self._uids)
+
     @property
     def uids(self) -> list:
         return self._uids

@@ -178,8 +178,9 @@ class SupervisedLModule(L.LightningModule):
         **kwargs,
     ) -> STEP_OUTPUT:
         x = batch[self.input_label]
+        target = batch[self.target_label]
         if self.flatten_target:
-            target = batch[self.target_label].flatten()
+            target = target.flatten()
         pred = self.model(x)
         loss = self.compute_and_log_losses(
             pred=pred,

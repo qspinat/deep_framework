@@ -20,6 +20,7 @@ class ResNet(nn.Module):
                  out_channels: int = 1,
                  list_depth: Sequence[int] = [3, 4, 6, 3],
                  base_filters: int = 32,
+                 c_mult: Sequence[int] = [1, 2, 4, 8],
                  kernel_size: int | Sequence[int] = 3,
                  strided_kernel_size: int | Sequence[int] = 2,
                  stride: int | Sequence[int] = 2,
@@ -68,8 +69,8 @@ class ResNet(nn.Module):
 
         for i, d in enumerate(list_depth):
             self.res_convs.extend([res_block_cls(
-                in_channels=self.base_filters*2**i,
-                out_channels=self.base_filters*2**i,
+                in_channels=self.base_filters*c_mult[i],
+                out_channels=self.base_filters*c_mult[i],
                 kernel_size=kernel_size,
                 strided_kernel_size=strided_kernel_size,
                 stride=1,
@@ -81,8 +82,8 @@ class ResNet(nn.Module):
             ) for j in range(d)])
             if i < len(list_depth)-1:
                 self.res_convs.append(res_block_cls(
-                    in_channels=self.base_filters*2**i,
-                    out_channels=self.base_filters*2**(i+1),
+                    in_channels=self.base_filters*c_mult[i],
+                    out_channels=self.base_filters*c_mult[i+1],
                     kernel_size=kernel_size,
                     strided_kernel_size=strided_kernel_size,
                     stride=stride,
@@ -95,7 +96,7 @@ class ResNet(nn.Module):
 
         self.res_convs = nn.Sequential(*self.res_convs)
 
-        embed_dim = self.base_filters*2**(len(list_depth)-1)
+        embed_dim = self.base_filters*c_mult[-1]
         if class_attention_block is not None:
             self.final_pool = class_attention_block(
                 in_features=embed_dim)

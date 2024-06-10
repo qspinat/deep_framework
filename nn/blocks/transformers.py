@@ -65,7 +65,7 @@ class ClassAttention(nn.Module):
         return x
 
 
-@gin.configurable(module="blocks")
+@gin.register(module="blocks")
 class ClassAttentionLayer(nn.Module):
     """Class Attention Layer as in CaiT https://arxiv.org/abs/2103.17239
     """
@@ -136,7 +136,7 @@ class ClassAttentionLayer(nn.Module):
         self.tokens_norm = tokens_norm
 
     def forward(
-        self, x: torch.Tensor, return_attention: bool = False
+        self, x: torch.Tensor, return_attention: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         if return_attention:
             x_, attn = self.attn(self.norm1(x), return_attention)
@@ -190,7 +190,7 @@ class ClassAttentionBlock(nn.Module):
         self.layers = nn.ModuleList(layers)
 
     def forward(
-        self, x: torch.Tensor, return_attention: bool
+        self, x: torch.Tensor, return_attention: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         attns = []
         for layer in self.layers:

@@ -102,3 +102,11 @@ gin.external_configurable(torch.nn.MaxPool3d, module="torch")
 # Transformers
 gin.external_configurable(torch.nn.TransformerEncoder, module="torch")
 gin.external_configurable(torch.nn.TransformerEncoderLayer, module="torch")
+
+# Losses
+gin.external_configurable(torch.nn.CrossEntropyLoss, module="torch")
+gin.external_configurable(torch.nn.MSELoss, module="torch")
+gin.external_configurable(torch.nn.L1Loss, module="torch")
+gin.external_configurable(torch.nn.BCELoss, module="torch")
+gin.external_configurable(torch.nn.BCEWithLogitsLoss, module="torch")
+gin.external_configurable(torch.nn.SmoothL1Loss, module="torch")
