@@ -34,9 +34,10 @@ class LossWrapper(nn.Module):
 
     def forward(
         self,
-        input: torch.Tensor,
+        inputs: torch.Tensor,
         target: torch.Tensor,
-        **kwargs
+        *args,
+        ** kwargs
     ) -> torch.Tensor:
         """Computation of the loss.
 
@@ -48,8 +49,8 @@ class LossWrapper(nn.Module):
             torch.Tensor: computed loss.
         """
         if self.channels is not None:
-            input = input[:, self.channels]
+            inputs = inputs[:, self.channels]
             target = target[:, self.channels]
         if self.activation is not None:
-            input = self.activation(input)
-        return self.loss_fn(input, target, **kwargs)
+            inputs = self.activation(inputs)
+        return self.loss_fn(inputs, target)

@@ -10,7 +10,7 @@ from lightning.pytorch.utilities.types import STEP_OUTPUT
 import torch
 from torch import nn
 from torch import optim
-import torchmetrics
+import torchmetrics as tm
 
 
 @gin.register(module="trainers")
@@ -22,7 +22,7 @@ class SupervisedLModule(L.LightningModule):
             model: type[nn.Module],
             losses: Sequence[tuple[type[nn.Module], float]],
             metrics: Sequence[type[nn.Module]],
-            torchmetrics: Sequence[type[torchmetrics.Metric]],
+            torchmetrics: Sequence[type[tm.Metric]],
             input_label: str,
             target_label: str,
             optimizer: type[optim.Optimizer] | None,
@@ -123,9 +123,18 @@ class SupervisedLModule(L.LightningModule):
             torch.Tensor: Loss.
         """
         loss = torch.zeros(1, dtype=pred.dtype, device=pred.device)
+
+        def log_fn(name: str, value: float):
+            self.log(
+                f"{log_label}.{name}",
+                value,
+                on_epoch=True,
+                on_step=False,
+            )
+
         for l_name, w in zip(self.loss_names, self.loss_weights):
             l = self.__getattr__(l_name)
-            _loss = l(pred, target)
+            _loss = l(pred, target, log_fn)
             self.log(
                 f"{log_label}.{l_name}",
                 _loss.item(),
@@ -138,6 +147,7 @@ class SupervisedLModule(L.LightningModule):
                  on_epoch=True,
                  on_step=True,
                  prog_bar=True)
+        return loss
 
     def compute_and_log_metrics(
             self,
@@ -161,7 +171,7 @@ class SupervisedLModule(L.LightningModule):
                 on_step=False,
             )
         for m_name in self.torchmetric_names:
-            m: torchmetrics.Metric = self.__getattr__(
+            m: tm.Metric = self.__getattr__(
                 f"{log_label}_{m_name}")
             m.update(self.act_metric(pred), target)
             self.log(f'{log_label}.{m_name}',

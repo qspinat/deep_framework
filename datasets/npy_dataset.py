@@ -2,27 +2,28 @@
 
 import concurrent.futures
 import os
+import time
 from typing import Sequence
 
 import gin
+import kornia
 import numpy as np
 import torch
-import torchio as tio
+from torch import nn
 
 from . import base_dataset as bd
 from . import csv_dataset as cd
 
 
 @gin.register(module="dataset")
-class NiiDataset(bd.BaseDataset):
-    """Dataset for nii files.
+class NpyDataset(bd.BaseDataset):
+    """Dataset for npy files.
 
     Attributes:
         db_path (str): Path to the database.
         input_vol_keys (list[str]): Input volume keys.
         target_vol_keys (list[str]): Target volume keys.
-        label_keys (list[str]): keys if volumes to load as LabelMap.
-        compressed_keys (list[str]): Keys to load as nii.gz.
+        compressed_keys (list[str]): Keys to load as npz.
         csv_dataset (cd.CSVDataset | None): CSV dataset.
         patients_txt (str | None): Path to a txt file containing the patients.
         preprocess (Sequence[tio.Transform] | None): Preprocessing transforms.
@@ -37,12 +38,13 @@ class NiiDataset(bd.BaseDataset):
         db_path: str,
         input_vol_keys: list[str],
         target_vol_keys: list[str],
-        label_keys: list[str] | None = None,
         compressed_keys: list[str] | None = None,
         csv_dataset: cd.CSVDataset | None = None,
         patients_txt: str | None = None,
-        preprocess: Sequence[tio.Transform] | None = None,
-        data_aug: Sequence[tio.Transform] | None = None,
+        preprocess: (Sequence[kornia.augmentation.AugmentationBase2D |
+                     kornia.augmentation.AugmentationBase2D] | None) = None,
+        data_aug: (Sequence[kornia.augmentation.AugmentationBase2D |
+                   kornia.augmentation.AugmentationBase2D] | None) = None,
     ) -> None:
         """Constructor.
 
@@ -50,24 +52,25 @@ class NiiDataset(bd.BaseDataset):
             db_path (str): Path to the database.
             input_vol_keys (list[str]): Input volume keys.
             target_vol_keys (list[str]): Target volume keys.
-            label_keys (list[str]): keys if volumes to load as LabelMap.
-            compressed_keys (list[str]): Keys to load as nii.gz.
+            compressed_keys (list[str]): Keys to load as npz. Default to None.
             csv_dataset (cd.CSVDataset | None): CSV dataset. Default to None.
             patients_txt (str | None): Path to a txt file containing the patients.
                 Default to None.
-            preprocess (Sequence[tio.Transform] | None): Preprocessing transforms.
-                Default to None.
-            data_aug (Sequence[tio.Transform] | None): Data augmentations.
-                Default to None.
+            preprocess (Sequence[kornia.augmentation.AugmentationBase2D |
+                kornia.augmentation.AugmentationBase2D] | None): Preprocessing 
+                transforms. Default to None.
+            data_aug (Sequence[kornia.augmentation.AugmentationBase2D |
+                kornia.augmentation.AugmentationBase2D] | None): Data 
+                augmentations. Default to None.
         """
-        super().__init__(db_path=db_path,
-                         preprocess=preprocess,
-                         data_aug=data_aug)
-        self.preprocess = tio.Compose(self.preprocess)
-        self.data_aug = tio.Compose(self.data_aug)
+        super().__init__(
+            db_path=db_path,
+            preprocess=preprocess,
+            data_aug=data_aug)
+        self.preprocess = nn.Sequential(*self.preprocess)
+        self.data_aug = nn.Sequential(*self.data_aug)
         self.input_vol_keys = input_vol_keys
         self.target_vol_keys = target_vol_keys
-        self.label_keys = label_keys if label_keys is not None else []
         self.compressed_keys = (
             compressed_keys if compressed_keys is not None else [])
         self.csv_dataset = csv_dataset
@@ -75,7 +78,7 @@ class NiiDataset(bd.BaseDataset):
         self._uids = None
         for key in input_vol_keys + target_vol_keys:
             _uids = os.listdir(os.path.join(db_path, key))
-            _uids = [uid.split(".nii")[0] for uid in _uids]
+            _uids = [uid.split(".np")[0] for uid in _uids]
             self._uids = (set(_uids) if self._uids is None
                           else self._uids & set(_uids))
 
@@ -92,7 +95,7 @@ class NiiDataset(bd.BaseDataset):
             ]
         self._uids = sorted(self._uids)
 
-    def _load_subject(self, uid: str) -> tio.Subject:
+    def _load_subject(self, uid: str) -> dict[str, torch.Tensor]:
         """Load a subject from its uid.
 
         Args:
@@ -105,14 +108,21 @@ class NiiDataset(bd.BaseDataset):
 
         def read_vol(key: str):
             if key in self.compressed_keys:
-                nii_path = os.path.join(
-                    self.db_path, key, f"{uid}.nii.gz")
+                npy_path = os.path.join(
+                    self.db_path, key, f"{uid}.npz")
             else:
-                nii_path = os.path.join(
-                    self.db_path, key, f"{uid}.nii")
-            if key in self.label_keys:
-                return tio.LabelMap(nii_path)
-            return tio.ScalarImage(nii_path)
+                npy_path = os.path.join(
+                    self.db_path, key, f"{uid}.npy")
+            attempt = 0
+            while attempt < 10:
+                try:
+                    vol = np.load(npy_path)
+                    break
+                except ValueError as e:
+                    print(e)
+                    attempt += 1
+                    time.sleep(1e-1)
+            return torch.from_numpy(vol.astype(np.float32))
         with concurrent.futures.ThreadPoolExecutor(
                 max_workers=len(self.input_vol_keys)) as executor:
             vols = executor.map(read_vol, self.input_vol_keys)
@@ -125,9 +135,9 @@ class NiiDataset(bd.BaseDataset):
         masks = list(masks)
         for mask, key in zip(masks, self.target_vol_keys):
             subject[key] = mask
-        return tio.Subject(subject)
+        return subject
 
-    def _compute_input(self, subject: tio.Subject) -> torch.Tensor:
+    def _compute_input(self, subject: dict[str, torch.Tensor]) -> torch.Tensor:
         """Compute input tensor from subject. Concatenates input volumes 
         along channel axis.
 
@@ -140,7 +150,7 @@ class NiiDataset(bd.BaseDataset):
         return torch.cat(
             [subject[key].data.float() for key in self.input_vol_keys], dim=0)
 
-    def _compute_target(self, subject: tio.Subject) -> torch.Tensor:
+    def _compute_target(self, subject: dict[str, torch.Tensor]) -> torch.Tensor:
         """Compute target tensor from subject. Concatenates target volumes
         along channel axis.
 
@@ -167,9 +177,10 @@ class NiiDataset(bd.BaseDataset):
         uid = self.uids[index]
         data = {}
         subject = self._load_subject(uid)
-        subject = self.preprocess(subject)
-        if self.is_train():
-            subject = self.data_aug(subject)
         data["input"] = self._compute_input(subject)
         data["target"] = self._compute_target(subject)
+        data["input"] = self.preprocess(data["input"])
+        data["target"] = self.preprocess(data["target"])
+        if self.is_train():
+            data["input"] = self.data_aug(data["input"])
         return data
