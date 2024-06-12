@@ -32,6 +32,7 @@ class ResNet(nn.Module):
                      type[blocks.ResNetBlock] | type[blocks.BottleNeckResNetBlock]
                  ) = blocks.BottleNeckResNetBlock,
                  class_attention_block: type[transformers.ClassAttentionBlock] | None = None,
+                 rel_position_input: bool = False,
                  dim: int = 2,
                  *args,
                  **kwargs) -> None:
@@ -46,6 +47,8 @@ class ResNet(nn.Module):
         if type(strided_kernel_size) == int:
             strided_kernel_size = [strided_kernel_size for i in range(dim)]
 
+        if rel_position_input:
+            in_channels += dim
         self.input_conv = blocks.ConvUnit(
             utils.get_conv_nd(dim)(
                 in_channels=in_channels,
@@ -115,6 +118,8 @@ class ResNet(nn.Module):
 
         self.apply(self._init_weights)
 
+        self.rel_position_input = rel_position_input
+
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             nn.init.normal_(m.weight, std=.02)
@@ -128,7 +133,24 @@ class ResNet(nn.Module):
     def no_weigh_decay(self) -> set:
         return {'cls_token'}
 
+    def cat_rel_pos(self, x: torch.Tensor) -> torch.Tensor:
+        """Concatenate relative position to input."""
+        rel_pos = []
+        for d in range(x.ndim-2):
+            rel_pos.append(torch.arange(
+                x.shape[d+2], device=x.device, dtype=x.dtype)/x.shape[d+2])
+
+        rel_pos = torch.stack(torch.meshgrid(*rel_pos), dim=0)[None]
+        rel_pos = rel_pos.repeat(
+            x.shape[0],
+            *[1 for i in range(rel_pos.ndim-1)]
+        )
+        x = torch.cat((x, rel_pos), dim=1)
+        return x
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.rel_position_input:
+            x = self.cat_rel_pos(x)
         x = self.input_conv(x)
         x = self.pool(x)
         x = self.res_convs(x)
