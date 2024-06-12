@@ -72,9 +72,13 @@ class SupervisedLModule(L.LightningModule):
         for m in torchmetrics:
             val_m = m()
             train_m = m()
-            self.__setattr__(f"val_{val_m.__class__.__name__}", val_m)
-            self.__setattr__(f"train_{train_m.__class__.__name__}", train_m)
-            self.torchmetric_names.append(val_m.__class__.__name__)
+            val_name = (val_m.name if hasattr(val_m, "name")
+                        else val_m.__class__.__name__)
+            train_name = (train_m.name if hasattr(train_m, "name")
+                          else train_m.__class__.__name__)
+            self.__setattr__(f"val_{val_name}", val_m)
+            self.__setattr__(f"train_{train_name}", train_m)
+            self.torchmetric_names.append(val_name)
         self.input_label = input_label
         self.target_label = target_label
         self.optimizer = optimizer

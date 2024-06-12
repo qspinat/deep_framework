@@ -118,7 +118,7 @@ class NpyDataset(bd.BaseDataset):
                 try:
                     vol = np.load(npy_path)
                     break
-                except ValueError as e:
+                except (ValueError, EOFError, FileNotFoundError) as e:
                     print(e)
                     attempt += 1
                     time.sleep(1e-1)
