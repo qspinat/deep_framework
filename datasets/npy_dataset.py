@@ -114,7 +114,7 @@ class NpyDataset(bd.BaseDataset):
                 npy_path = os.path.join(
                     self.db_path, key, f"{uid}.npy")
             attempt = 0
-            while attempt < 10:
+            while attempt < 15:
                 try:
                     vol = np.load(npy_path)
                     break

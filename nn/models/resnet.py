@@ -138,7 +138,7 @@ class ResNet(nn.Module):
         rel_pos = []
         for d in range(x.ndim-2):
             rel_pos.append(torch.arange(
-                x.shape[d+2], device=x.device, dtype=x.dtype)/x.shape[d+2])
+                x.shape[d+2], device=x.device, dtype=x.dtype)/(x.shape[d+2]-1))
 
         rel_pos = torch.stack(torch.meshgrid(*rel_pos), dim=0)[None]
         rel_pos = rel_pos.repeat(

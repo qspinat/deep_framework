@@ -172,4 +172,5 @@ class NiiDataset(bd.BaseDataset):
             subject = self.data_aug(subject)
         data["input"] = self._compute_input(subject)
         data["target"] = self._compute_target(subject)
+        data["affine"] = subject[self.input_vol_keys[0]].affine
         return data

@@ -88,6 +88,7 @@ class SupervisedLModule(L.LightningModule):
         self.data_aug_batch_size = data_aug_batch_size
         self.act_metric = activation_metric
         self.flatten_target = flatten_target
+        self.save_hyperparameters()
 
     def on_after_batch_transfer(
         self,
