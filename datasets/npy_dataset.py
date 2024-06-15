@@ -148,7 +148,7 @@ class NpyDataset(bd.BaseDataset):
             torch.Tensor: Input tensor.
         """
         return torch.cat(
-            [subject[key].data.float() for key in self.input_vol_keys], dim=0)
+            [subject[key].float() for key in self.input_vol_keys], dim=0)
 
     def _compute_target(self, subject: dict[str, torch.Tensor]) -> torch.Tensor:
         """Compute target tensor from subject. Concatenates target volumes
@@ -161,7 +161,7 @@ class NpyDataset(bd.BaseDataset):
             torch.Tensor: Target tensor.
         """
         return torch.cat(
-            [subject[key].data.float() for key in self.target_vol_keys], dim=0)
+            [subject[key].float() for key in self.target_vol_keys], dim=0)
 
     def __getitem__(self, index) -> dict[str, torch.Tensor]:
         """Get item from dataset.

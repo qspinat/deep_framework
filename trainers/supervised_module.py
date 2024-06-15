@@ -139,7 +139,7 @@ class SupervisedLModule(L.LightningModule):
 
         for l_name, w in zip(self.loss_names, self.loss_weights):
             l = self.__getattr__(l_name)
-            _loss = l(pred, target, log_fn)
+            _loss = l(pred, target, log_fn=log_fn)
             self.log(
                 f"{log_label}.{l_name}",
                 _loss.item(),

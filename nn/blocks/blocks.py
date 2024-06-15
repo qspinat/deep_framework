@@ -54,6 +54,7 @@ class ResNetBlock(nn.Module):
         kernel_size: int | Sequence[int] = 3,
         strided_kernel_size: int | Sequence[int] = 2,
         stride: int | Sequence[int] = 1,
+        groups: int = 1,
         normalization: type[batchnorm._NormBase] | None = nn.BatchNorm2d,
         activation: type[nn.Module] = nn.ReLU,
         out_activation: int | Sequence[int] | None = nn.ReLU,
@@ -70,6 +71,7 @@ class ResNetBlock(nn.Module):
             kernel_size (int | Sequence[int]): Kernel size. Default to 3.
             strided_kernel_size (int | Sequence[int]): Strided kernel size. Default to 2.
             stride (int | Sequence[int]): Stride. Default to 1.
+            groups (int): Number of groups for the convolution. Default to 1.
             normalization (torch.nn.modules.batchnorm._NormBase | None): Normalization layer. 
                 Default to nn.BatchNorm2d.
             activation (torch.nn.Module): Activation layer. Default to ReLU.
@@ -94,6 +96,7 @@ class ResNetBlock(nn.Module):
                 padding=[k//2 for k in kernel_size],
                 kernel_size=kernel_size,
                 stride=stride,
+                groups=groups,
             ),
             normalization=normalization(out_channels),
             activation=activation(),
@@ -106,6 +109,7 @@ class ResNetBlock(nn.Module):
                 out_channels=out_channels,
                 kernel_size=kernel_size,
                 padding=[k//2 for k in kernel_size],
+                groups=groups,
             ),
             normalization=normalization(out_channels),
             activation=None,
@@ -119,6 +123,7 @@ class ResNetBlock(nn.Module):
                 kernel_size=strided_kernel_size,
                 padding=[k//2 for k in strided_kernel_size],
                 stride=stride,
+                groups=groups,
             ),
             normalization=normalization(out_channels),
             activation=None,
@@ -150,6 +155,7 @@ class BottleNeckResNetBlock(nn.Module):
         kernel_size: int | Sequence[int] = 3,
         strided_kernel_size: int | Sequence[int] = 2,
         stride: int | Sequence[int] = 1,
+        groups: int = 1,
         normalization: type[batchnorm._NormBase] | None = nn.BatchNorm2d,
         activation: type[nn.Module] = nn.ReLU,
         out_activation: int | Sequence[int] | None = nn.ReLU,
@@ -166,6 +172,7 @@ class BottleNeckResNetBlock(nn.Module):
             kernel_size (int | Sequence[int]): Kernel size. Default to 3.
             strided_kernel_size (int | Sequence[int]): Strided kernel size. Default to 2.
             stride (int | Sequence[int]): Stride. Default to 1.
+            groups (int): Number of groups for the convolution. Default to 1.
             normalization (torch.nn.modules.batchnorm._NormBase | None): Normalization layer. 
                 Default to nn.BatchNorm2d.
             activation (torch.nn.Module): Activation layer. Default to ReLU.
@@ -190,6 +197,7 @@ class BottleNeckResNetBlock(nn.Module):
                 kernel_size=1,
                 padding=0,
                 stride=stride,
+                groups=groups,
             ),
             normalization=normalization(out_channels//4),
             activation=activation(),
@@ -202,6 +210,7 @@ class BottleNeckResNetBlock(nn.Module):
                 out_channels=out_channels//4,
                 kernel_size=kernel_size,
                 padding=[k//2 for k in kernel_size],
+                groups=groups,
             ),
             normalization=normalization(out_channels//4),
             activation=activation(),
@@ -214,6 +223,7 @@ class BottleNeckResNetBlock(nn.Module):
                 out_channels=out_channels,
                 kernel_size=1,
                 padding=0,
+                groups=groups,
             ),
             normalization=normalization(out_channels),
             activation=None,
@@ -227,6 +237,7 @@ class BottleNeckResNetBlock(nn.Module):
                 kernel_size=strided_kernel_size,
                 padding=[k//2 for k in strided_kernel_size],
                 stride=stride,
+                groups=groups,
             ),
             normalization=normalization(out_channels),
             activation=None,
