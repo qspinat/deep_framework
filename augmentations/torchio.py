@@ -104,3 +104,21 @@ class RandomCrop(
             label_keys=self.label_keys,
         )
         return crop(subject)
+
+
+@gin.register(module="tio")
+class RandomDropout(
+        tio.transforms.augmentation.RandomTransform,
+        tio.transforms.SpatialTransform):
+    """ Randomly dropout. """
+
+    def apply_transform(self, subject: tio.Subject) -> tio.Subject:
+        im_dict = subject.get_images_dict(
+            intensity_only=False,
+            include=self.include,
+            exclude=self.exclude,
+        )
+        for key, image in im_dict.items():
+            image.set_data(torch.zeros_like(image.data))
+            subject[key] = image
+        return subject
