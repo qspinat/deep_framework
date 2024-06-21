@@ -1,5 +1,6 @@
 """ResNet implementation."""
 
+import math
 from typing import Sequence
 
 import gin
@@ -25,6 +26,7 @@ class ResNet(nn.Module):
                  strided_kernel_size: int | Sequence[int] = 2,
                  stride: int | Sequence[int] = 2,
                  groups: int = 1,
+                 maxpool: bool = True,
                  normalization: type[batchnorm._NormBase] | None = nn.BatchNorm2d,
                  activation: type[nn.Module] = nn.ReLU,
                  out_activation: type[nn.Module] | None = None,
@@ -33,12 +35,18 @@ class ResNet(nn.Module):
                      type[blocks.ResNetBlock] | type[blocks.BottleNeckResNetBlock]
                  ) = blocks.BottleNeckResNetBlock,
                  class_attention_block: type[transformers.ClassAttentionBlock] | None = None,
+                 pos_encoding: type[transformers.PositionEncoding] | None = None,
+                 img_size: Sequence[int] | None = None,
                  rel_position_input: bool = False,
                  dim: int = 2,
                  *args,
                  **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.base_filters = base_filters
+
+        if pos_encoding is not None and img_size is None:
+            raise ValueError(
+                "img_size must be provided when using pos_encoding.")
 
         if issubclass(res_block_cls, blocks.BottleNeckResNetBlock):
             self.base_filters *= 4
@@ -47,6 +55,8 @@ class ResNet(nn.Module):
             kernel_size = [kernel_size for i in range(dim)]
         if type(strided_kernel_size) == int:
             strided_kernel_size = [strided_kernel_size for i in range(dim)]
+        if type(stride) == int:
+            stride = [stride for i in range(dim)]
 
         if rel_position_input:
             in_channels += dim
@@ -55,7 +65,7 @@ class ResNet(nn.Module):
                 in_channels=in_channels,
                 out_channels=self.base_filters,
                 kernel_size=strided_kernel_size,
-                padding=[k//2 for k in strided_kernel_size],
+                padding=0,
                 stride=stride,
                 groups=groups,
             ),
@@ -64,11 +74,30 @@ class ResNet(nn.Module):
             dropout=(dropout() if dropout is not None else None),
         )
 
+        stride_padding = tuple(
+            math.ceil((strided_kernel_size[i] - stride[i]) / 2)
+            for i in range(dim))
         self.pool = utils.get_maxpool_nd(dim)(
             kernel_size=strided_kernel_size,
             stride=stride,
-            padding=[k//2 for k in strided_kernel_size],
-        )
+            padding=stride_padding,
+        ) if maxpool else nn.Identity()
+
+        if pos_encoding is not None:
+            down_factors = [st**len(list_depth) for st in stride]
+            if maxpool:
+                down_factors = [d*st for d, st in zip(down_factors, stride)]
+            self.pos_encoding = pos_encoding(
+                projection_size=(
+                    base_filters * c_mult[-1]
+                    if issubclass(res_block_cls, blocks.ResNetBlock)
+                    else base_filters * (4 * c_mult[-1])),
+                sequence_length=[
+                    s // d for s, d
+                    in zip(img_size, down_factors)]
+            )
+        else:
+            self.pos_encoding = None
 
         self.res_convs = []
 
@@ -107,7 +136,7 @@ class ResNet(nn.Module):
         if class_attention_block is not None:
             self.final_pool = class_attention_block(
                 in_features=embed_dim)
-            self.cls_token = nn.Parameter(torch.zeros((1, 1, embed_dim)))
+            self.cls_token = nn.Parameter(torch.zeros((1, embed_dim)))
             self.last_norm = nn.LayerNorm(embed_dim)
             nn.init.normal_(self.cls_token, std=.02)
         else:
@@ -135,7 +164,7 @@ class ResNet(nn.Module):
 
     @torch.jit.ignore
     def no_weigh_decay(self) -> set:
-        return {'cls_token'}
+        return {'cls_token', 'pos_encoding'}
 
     def cat_rel_pos(self, x: torch.Tensor) -> torch.Tensor:
         """Concatenate relative position to input."""
@@ -160,8 +189,12 @@ class ResNet(nn.Module):
         x = self.res_convs(x)
         if isinstance(self.final_pool, transformers.ClassAttentionBlock):
             x = x.flatten(2, -1).transpose(1, 2)  # BxNxE
-            cls_tokens = self.cls_token.expand(x.shape[0], -1, -1)
-            x = torch.cat((cls_tokens, x), dim=1)  # BxN+1xE
+            if self.pos_encoding is not None:
+                x = self.pos_encoding(x, self.cls_token)
+            else:
+                cls_tokens = self.cls_token.expand(
+                    x.shape[0], *self.cls_token.shape)
+                x = torch.cat((cls_tokens, x), dim=1)  # BxN+1xE
         x = self.final_pool(x)
         if isinstance(self.final_pool, transformers.ClassAttentionBlock):
             x = self.last_norm(x)[:, 0]

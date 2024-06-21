@@ -1,5 +1,6 @@
 """Basic blocks implementations."""
 
+import math
 from typing import Sequence
 
 import gin
@@ -88,13 +89,18 @@ class ResNetBlock(nn.Module):
             stride = [stride for i in range(dim)]
 
         downsample = any([s != 1 for s in stride])
+        stride_padding = tuple(
+            math.ceil((strided_kernel_size[i] - stride[i]) / 2)
+            for i in range(dim))
 
         self.conv1 = ConvUnit(
             conv=utils.get_conv_nd(dim)(
                 in_channels=in_channels,
                 out_channels=out_channels,
-                padding=[k//2 for k in kernel_size],
-                kernel_size=kernel_size,
+                padding=([k//2 for k in kernel_size] if not downsample
+                         else stride_padding),
+                kernel_size=(kernel_size if not downsample
+                             else strided_kernel_size),
                 stride=stride,
                 groups=groups,
             ),
@@ -121,7 +127,7 @@ class ResNetBlock(nn.Module):
                 in_channels=in_channels,
                 out_channels=out_channels,
                 kernel_size=strided_kernel_size,
-                padding=[k//2 for k in strided_kernel_size],
+                padding=stride_padding,
                 stride=stride,
                 groups=groups,
             ),

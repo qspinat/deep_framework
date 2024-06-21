@@ -10,5 +10,8 @@ from .mlp import (
 )
 from .transformers import (
     ClassAttentionLayer,
-    ClassAttentionBlock
+    ClassAttentionBlock,
+    LearntPositionEncoding,
+    NdSinCosLearntPositionEncoding,
+    NdSinCosPositionEncoding,
 )

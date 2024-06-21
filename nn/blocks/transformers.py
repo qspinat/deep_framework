@@ -1,5 +1,9 @@
 """Transformer blocks."""
 
+import abc
+import math
+from typing import Sequence
+
 import gin
 import torch
 from torch import nn
@@ -202,3 +206,272 @@ class ClassAttentionBlock(nn.Module):
         if return_attention:
             return x, attns
         return x
+
+
+class PositionEncoding(nn.Module, abc.ABC):
+    """Base class for all transformer input sequence position encoders."""
+
+    def __init__(self,
+                 projection_size: int,
+                 sequence_length: int | Sequence[int],
+                 encode_cls_token: bool,
+                 **kwargs):
+        """Inits PositionEncoding.
+
+        Args:
+            projection_size (int): number of features in the linear projected
+                representation.
+            sequence_length (int | Sequence[int]): the number of elements
+                in the sequential input. It can either be a single int denoting
+                a 1d or flattened sequence or a tuple of ints denoting the
+                sequence length in each direction.
+            encode_cls_token (bool): Whether to add a position encoding for
+                the cls_token or not.
+        """
+        super().__init__(**kwargs)
+        self.projection_size = projection_size
+        self.sequence_length = sequence_length
+        self.encode_cls_token = encode_cls_token
+
+    @property
+    @abc.abstractmethod
+    def encoding(self):
+        ...
+
+    def _cat_cls_token(self,
+                       projection: torch.Tensor,
+                       cls_token: torch.Tensor | None) -> torch.Tensor:
+        if cls_token is None:
+            return projection
+        b = projection.shape[0]
+        cls_token = cls_token.expand(b, *cls_token.shape)
+        return torch.cat([cls_token, projection], dim=1)
+
+    def forward(self,
+                input: torch.Tensor,
+                cls_token: torch.Tensor | None) -> torch.Tensor:
+        """
+
+        Args:
+            input (torch.Tensor<float>[B,N,E]): linear projection of the input.
+                Where E is the projection_size (embedding size), and N is the
+                total number of patches in the flattened sequence.
+            cls_token (Optional[torch.Tensor<float>[1,E]]): the learnable
+                classification token.
+
+        Returns:
+            Union[torch.Tensor<float>[B,N+1,E],torch.Tensor<float>[B,N,E]]:
+                position encoded input with concatenated cls_token if not
+                none. Where E is the projection_size (embedding size).
+        """
+        if self.encode_cls_token:
+            return self._cat_cls_token(input, cls_token) + self.encoding
+        return self._cat_cls_token(input + self.encoding, cls_token)
+
+
+@gin.register(module="blocks")
+class LearntPositionEncoding(PositionEncoding):
+    """Position encoder where encodings are learnt during training.
+
+    This encoder is the same as the one used in the original BERT and ViT
+    papers.
+    """
+
+    def __init__(self,
+                 projection_size: int,
+                 sequence_length: int | Sequence[int],
+                 encode_cls_token: bool = True,
+                 **kwargs):
+        super().__init__(projection_size,
+                         sequence_length,
+                         encode_cls_token,
+                         **kwargs)
+        self._encoding = self.make_learnable_encoding()
+
+    def make_learnable_encoding(self) -> torch.Tensor:
+        sequence_length = (self.sequence_length
+                           if isinstance(self.sequence_length, int)
+                           else torch.tensor(self.sequence_length).prod().int())
+        sequence_length = (sequence_length + 1
+                           if self.encode_cls_token else sequence_length)
+        encoding = nn.Parameter(torch.empty(1,
+                                            sequence_length,
+                                            self.projection_size))
+        # the value of 0.02 for std comes from the official jax impl of ViT
+        # https://github.com/google-research/vision_transformer/blob/main/vit_jax/models_vit.py#L187
+        # which inturn come from BERT.
+        nn.init.normal_(encoding, std=0.02)
+        return encoding
+
+    @property
+    def encoding(self):
+        return self._encoding
+
+
+def _sincos_pos_encoding_1d(projection_size: int,
+                            sequence_length: int,
+                            temperature: float = 10000.0) -> torch.Tensor:
+    positions = torch.arange(0, sequence_length).unsqueeze(1)
+    encoding = torch.empty(1, sequence_length, projection_size)
+    div_term = torch.exp(torch.arange(
+        0, projection_size, 2) * (-math.log(temperature) / projection_size))
+    encoding[0, :, 0::2] = torch.sin(positions * div_term)
+    encoding[0, :, 1::2] = torch.cos(positions * div_term)
+    return encoding
+
+
+@gin.register(module="blocks")
+class NdSinCosPositionEncoding(PositionEncoding):
+    """Position encoder using multiple sine waves of different frequencies.
+
+    This encoder is the same as one used in the original transformer paper,
+    Ashish Vaswani et al. "Attention Is All You Need", 2017
+    (https://arxiv.org/pdf/1706.03762.pdf), if the input to `sequence_length`
+    is an integer or a 1 element list.
+
+    If the input to `sequence_length` is a list with `n` integers then it
+    encodes an nd-sin-cos embedding which is a generalization of the 2d
+    sin-cos encoding introduced for images in MoCo v3, Xinlei Chen et al.
+    "An Empirical Study of Training Self-Supervised Vision Transformers", 2021.
+    (https://arxiv.org/pdf/2104.02057.pdf)
+    """
+
+    def __init__(self,
+                 projection_size: int,
+                 sequence_length: int | Sequence[int],
+                 encode_cls_token: bool = False,
+                 temperature: float = 10000.0,
+                 **kwargs):
+        """Inits NdSinCosPositionEncoding.
+
+        Args:
+            temperature (float): In sin-cos encoding the wavelengths form a
+                geometric progression from 2π to temperature · 2π. Therefore,
+                the parameter temperature controls the maximum wavelength
+                of the sin/cos waves. Defaults to 10000.0.
+
+        Raises:
+            ValueError: If projection_size cannot be split in equal parts
+                to encode all directions, i.e., projection_size must be
+                divisible by twice the number of dimensions in data.
+            ValueError: If `encode_cls_token` is set to `True`.
+        """
+        if encode_cls_token:
+            raise ValueError(
+                f"{self.__class__.__name__} does not support"
+                " encoding of classification token.")
+        sequence_length = ([sequence_length]
+                           if isinstance(sequence_length, int)
+                           else sequence_length)
+        if projection_size % (2 * len(sequence_length)):
+            raise ValueError(
+                "Expected projection size to be divisible by "
+                f"{2*len(sequence_length)} in order to use sin-cos position"
+                f" embedding. Found projection size {projection_size}"
+                " instead.")
+        self.temperature = temperature
+        super().__init__(projection_size,
+                         sequence_length,
+                         encode_cls_token,
+                         **kwargs)
+        encoding = self.make_nd_sincos_encoding()
+        self.register_buffer("_encoding", encoding)
+        self._encoding: torch.Tensor
+
+    @property
+    def encoding(self):
+        return self._encoding
+
+    def make_nd_sincos_encoding(self) -> torch.Tensor:
+        num_dims = len(self.sequence_length)
+        projection_size_per_dim = int(self.projection_size / num_dims)
+        partial_encodings = [
+            _sincos_pos_encoding_1d(
+                projection_size_per_dim, seq_len, self.temperature)
+            for seq_len in self.sequence_length]
+        final_encoding = torch.empty(
+            1, *self.sequence_length, self.projection_size)
+        for i, encoding in enumerate(partial_encodings):
+            encoding = encoding.view(
+                1, encoding.shape[1], *[1] * (num_dims - 1), encoding.shape[2]
+            ).movedim(1, i + 1)
+            proj_indices_st = i * projection_size_per_dim
+            proj_indices_end = proj_indices_st + projection_size_per_dim
+            final_encoding[..., proj_indices_st:proj_indices_end] = encoding
+        return final_encoding.view(1, -1, self.projection_size)
+
+
+@gin.register(module="blocks")
+class NdSinCosLearntPositionEncoding(NdSinCosPositionEncoding):
+    """
+    Positional encoding relying on a fourier kernel and a learnt embedding
+    matching the one used in Ashish Vaswani et al. "Attention Is All You Need",
+    2017 (https://arxiv.org/pdf/1706.03762.pdf).
+    """
+
+    def __init__(
+            self,
+            projection_size: int,
+            sequence_length: int | Sequence[int],
+            hidden_dim: int = 32,
+            temperature: float = 10000,
+            dim: int = 3,
+            **kwargs):
+        """Inits NdSinCosLearntPositionEncoding.
+
+        Args:
+            projection_size (int): number of features in the linear projected
+                representation.
+            sequence_length (Union[int, Sequence[int]]): the number of elements
+                in the sequential input. It can either be a single int denoting
+                a 1d or flattened sequence or a tuple of ints denoting the
+                sequence length in each direction.
+            hidden_dim (int): Hidden dimension in which each dimension position
+                is encoded using multiple sine waves of different frequencies.
+                Defaults to 32.
+            temperature (float): In sin-cos encoding the wavelengths form a
+                geometric progression from 2π to temperature · 2π. Therefore,
+                the parameter temperature controls the maximum wavelength
+                of the sin/cos waves. Defaults to 10000.0.
+            dim (int): Dimension of the input for 1d, 2d or 3d. Defaults to 3.
+        """
+        if dim is None and isinstance(sequence_length, int):
+            raise ValueError(
+                "dim must be specified if sequence_length is an int")
+        dim = dim or len(sequence_length)
+        if isinstance(sequence_length, int):
+            sequence_length = [sequence_length] * dim
+        if len(sequence_length) != dim:
+            raise ValueError("dim != len(sequence_length)")
+
+        super().__init__(projection_size=hidden_dim * dim,
+                         sequence_length=sequence_length,
+                         encode_cls_token=False,
+                         temperature=temperature,
+                         **kwargs)
+        self.dim = dim
+        self.token_projection = nn.Linear(
+            hidden_dim * dim, projection_size)
+
+    def forward(self,
+                input: torch.Tensor,
+                cls_token: torch.Tensor | None = None) -> torch.Tensor:
+        """
+
+        Args:
+            input (torch.Tensor<float>[B,N,E]): linear projection of the input.
+                Where E is the projection_size (embedding size), and N is the
+                total number of patches in the flattened sequence.
+            cls_token (Optional[torch.Tensor<float>[1,E]]): the learnable
+                classification token.
+
+        Returns:
+            Union[torch.Tensor<float>[B,N+1,E],torch.Tensor<float>[B,N,E]]:
+                position encoded input with concatenated cls_token if not
+                none. Where E is the projection_size (embedding size).
+        """
+        if self.encode_cls_token:
+            return (self._cat_cls_token(input, cls_token) +
+                    self.token_projection(self.encoding))
+        return self._cat_cls_token(
+            input + self.token_projection(self.encoding), cls_token)
