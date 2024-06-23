@@ -10,6 +10,7 @@ from kornia.augmentation import random_generator as rg
 from kornia.augmentation._3d.intensity import base
 from kornia.core import check
 from kornia.core import Tensor
+from kornia.enhance import adjust
 from kornia.filters import filter
 from kornia.filters import kernels
 
@@ -44,9 +45,8 @@ class RandomChannelDropout3D(base.IntensityAugmentationBase3D):
         flags: Dict[str, Any],
         transform: Optional[Tensor] = None,
     ) -> Tensor:
-        input = input*(
-            params["channels"][..., None, None, None] > self.dropout_p
-        )
+        channels = params["channels"].to(input)
+        input = input*(channels[..., None, None, None] > self.dropout_p)
         return input
 
     def compute_transformation(
@@ -213,6 +213,127 @@ class RandomGaussianBlur3D(base.IntensityAugmentationBase3D):
         input: torch.Tensor,
         params: dict[str, torch.Tensor],
         flags: torch.Dict[str, Any]
+    ) -> torch.Tensor:
+        identity = torch.eye(4, dtype=input.dtype, device=input.device)[None,]
+        return identity.expand(input.shape[0], 4, 4)
+
+
+def _randn_like(input: torch.Tensor, mean: float, std: float) -> torch.Tensor:
+    # Generating on GPU is fastest with `torch.randn_like(...)`
+    x = torch.randn_like(input)
+    if std != 1.0:  # `if` is cheaper than multiplication
+        x *= std
+    if mean != 0.0:  # `if` is cheaper than addition
+        x += mean
+    return x
+
+
+@gin.register(module="kornia")
+class RandomGaussianNoise3D(base.IntensityAugmentationBase3D):
+    r"""Add gaussian noise to a batch of multi-dimensional images.
+
+    .. image:: _static/img/RandomGaussianNoise.png
+
+    Args:
+        mean: The mean of the gaussian distribution.
+        std: The standard deviation of the gaussian distribution.
+        same_on_batch: apply the same transformation across the batch.
+        p: probability of applying the transformation.
+        keepdim: whether to keep the output shape the same as input (True)
+            or broadcast it to the batch form (False).
+    """
+
+    def __init__(
+        self,
+        mean: float = 0.0,
+        std: float = 1.0,
+        same_on_batch: bool = False,
+        p: float = 0.5,
+        keepdim: bool = False
+    ) -> None:
+        super().__init__(
+            p=p, same_on_batch=same_on_batch, p_batch=1.0, keepdim=keepdim)
+        self.flags = {"mean": mean, "std": std}
+
+    def apply_transform(
+        self,
+        input: torch.Tensor,
+        params: dict[str, torch.Tensor],
+        flags: dict[str, Any],
+        transform: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        if "gaussian_noise" in params:
+            gaussian_noise = params["gaussian_noise"]
+        else:
+            gaussian_noise = _randn_like(
+                input, mean=flags["mean"], std=flags["std"])
+            self._params["gaussian_noise"] = gaussian_noise
+        return input + gaussian_noise
+
+    def compute_transformation(
+        self,
+        input: torch.Tensor,
+        params: dict[str, torch.Tensor],
+        flags: dict[str, Any]
+    ) -> torch.Tensor:
+        identity = torch.eye(4, dtype=input.dtype, device=input.device)[None,]
+        return identity.expand(input.shape[0], 4, 4)
+
+
+@gin.register(module="kornia")
+class RandomGamma3D(base.IntensityAugmentationBase3D):
+    r"""Apply a random transformation to the gamma of a tensor image.
+
+    This implementation aligns PIL. Hence, the output is close to TorchVision.
+
+    .. image:: _static/img/RandomGamma.png
+
+    Args:
+        p: probability of applying the transformation.
+        gamma: the gamma factor to apply.
+        gain: the gain factor to apply.
+        same_on_batch: apply the same transformation across the batch.
+        keepdim: whether to keep the output shape the same as input (True) or
+            broadcast it to the batch form (False).
+    Shape:
+        - Input: :math:`(C, H, W, D)` or :math:`(B, C, H, W, D)`,
+            Optional: :math:`(B, 4, 4)`
+        - Output: :math:`(B, C, H, W, D)`
+
+    .. note::
+        This function internally uses :func:`kornia.enhance.adjust_gamma`
+    """
+
+    def __init__(
+        self,
+        gamma: tuple[float, float] = (1.0, 1.0),
+        gain: tuple[float, float] = (1.0, 1.0),
+        same_on_batch: bool = False,
+        p: float = 1.0,
+        keepdim: bool = False,
+    ) -> None:
+        super().__init__(p=p, same_on_batch=same_on_batch, keepdim=keepdim)
+        self._param_generator = rg.PlainUniformGenerator(
+            (gamma, "gamma_factor", None, None),
+            (gain, "gain_factor", None, None)
+        )
+
+    def apply_transform(
+        self,
+        input: torch.Tensor,
+        params: dict[str, torch.Tensor],
+        flags: dict[str, Any],
+        transform: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        gamma_factor = params["gamma_factor"].to(input)
+        gain_factor = params["gain_factor"].to(input)
+        return adjust.adjust_gamma(input, gamma_factor, gain_factor)
+
+    def compute_transformation(
+        self,
+        input: torch.Tensor,
+        params: dict[str, torch.Tensor],
+        flags: dict[str, Any]
     ) -> torch.Tensor:
         identity = torch.eye(4, dtype=input.dtype, device=input.device)[None,]
         return identity.expand(input.shape[0], 4, 4)
