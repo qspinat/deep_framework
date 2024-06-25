@@ -60,14 +60,16 @@ class SupervisedLModule(L.LightningModule):
         self.loss_weights = []
         for l, w in losses:
             l = l()
-            self.__setattr__(l.__class__.__name__, l)
+            name = (l.name if hasattr(l, "name") else l.__class__.__name__)
+            self.__setattr__(name, l)
             self.loss_weights.append(w)
-            self.loss_names.append(l.__class__.__name__)
+            self.loss_names.append(name)
         self.metric_names = []
         for m in metrics:
             m = m()
-            self.__setattr__(m.__class__.__name__, m)
-            self.metric_names.append(m.__class__.__name__)
+            name = (m.name if hasattr(m, "name") else m.__class__.__name__)
+            self.__setattr__(name, m)
+            self.metric_names.append(name)
         self.torchmetric_names = []
         for m in torchmetrics:
             val_m = m()
