@@ -198,11 +198,14 @@ class ClassAttentionBlock(nn.Module):
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         attns = []
         for layer in self.layers:
-            if return_attention:
-                x, attn = layer(x, True)
-                attns.append(attn)
+            if isinstance(layer, ClassAttentionLayer):
+                if return_attention:
+                    x, attn = layer(x, True)
+                    attns.append(attn)
+                else:
+                    x = layer(x, False)
             else:
-                x = layer(x, False)
+                x = layer(x)
         if return_attention:
             return x, attns
         return x

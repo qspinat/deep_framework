@@ -8,6 +8,7 @@ import pandas as pd
 from torch.utils import data
 import lightning as L
 from lightning.pytorch import loggers as L_loggers
+from lightning.pytorch import callbacks as L_callbacks
 
 
 @gin.configurable(module="trainers")
@@ -32,6 +33,8 @@ class KFoldTrainer:
         lightning_module: type[L.LightningModule],
         lightning_trainer: type[L.Trainer],
         loggers: Sequence[type[L_loggers.Logger]],
+        callbacks: list[type[L_callbacks.Callback]],
+        model_checkpointer: type[L_callbacks.ModelCheckpoint],
         train_patients_txts: Sequence[str],
         val_patients_txts: Sequence[str],
         train_dataset: type[data.Dataset],
@@ -73,6 +76,8 @@ class KFoldTrainer:
             lightning_trainer(
                 default_root_dir=d,
                 logger=[l(save_dir=d) for l in loggers],
+                callbacks=([c() for c in callbacks] +
+                           [model_checkpointer(dirpath=d)]),
             )
             for d in self.dirs]
         self.train_loaders = [
@@ -89,7 +94,7 @@ class KFoldTrainer:
     def fit(self) -> None:
         """Fit the model."""
         L.seed_everything(self.seed)
-        val_df = pd.DataFrame(columns=["fold", "val_loss"])
+        val_df = pd.DataFrame(columns=["fold"])
         for i in range(self.k):
             print(f"Training fold {i}.")
             self.lighting_trainers[i].fit(
@@ -103,12 +108,19 @@ class KFoldTrainer:
                 dataloaders=self.val_loaders[i],
                 ckpt_path="best",
             )
+            row = {"fold": i}
+            row.update(dict(val_res[0].items()))
             val_df = pd.concat((
                 val_df,
-                pd.DataFrame({
-                    "fold": [i],
-                    "val_loss": [val_res[0]],
-                })),
+                pd.DataFrame(row, index=[i])),
                 ignore_index=True,
             )
             val_df.to_csv(os.path.join(self.root_dir, "val_results.csv"))
+        mean_row = {"fold": "mean"}
+        mean_row.update({k: v for k, v in val_df.mean().items()})
+        val_df = pd.concat((
+            val_df,
+            pd.DataFrame(mean_row, index=[self.k+1])),
+            ignore_index=True,
+        )
+        val_df.to_csv(os.path.join(self.root_dir, "val_results.csv"))
