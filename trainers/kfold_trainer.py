@@ -116,8 +116,8 @@ class KFoldTrainer:
                 ignore_index=True,
             )
             val_df.to_csv(os.path.join(self.root_dir, "val_results.csv"))
-        mean_row = {"fold": "mean"}
-        mean_row.update({k: v for k, v in val_df.mean().items()})
+        mean_row = dict(val_df.mean().items())
+        mean_row["fold"] = "mean"
         val_df = pd.concat((
             val_df,
             pd.DataFrame(mean_row, index=[self.k+1])),

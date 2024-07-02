@@ -15,6 +15,7 @@ class CSVDataset:
         df (pd.DataFrame): Dataframe.
         input_features (Sequence[str]): Input features.
         target_features (Sequence[str]): Target features.
+        additional_features (Sequence[str]): Additional features.
 
     Properties:
         uids (list): List of unique identifiers.
@@ -27,6 +28,7 @@ class CSVDataset:
         csv_path: str,
         input_features: Sequence[str] | None = None,
         target_features: Sequence[str] | None = None,
+        additional_features: Sequence[str] | None = None,
         feature_filtering: dict[str, Sequence[Any]] | None = None,
         index_col: str | int | None = 0,
     ) -> None:
@@ -36,14 +38,19 @@ class CSVDataset:
             csv_path (str): Path to the CSV file.
             input_features (Sequence[str] | None): Input features.
             target_features (Sequence[str] | None): Target features.
+            additional_features (Sequence[str] | None): Additional features.
             feature_filtering (dict[str, Sequence[Any]] | None): Value 
                 to filter for features.
             index_col (str | int): Index column in the csv file.
         """
         self.df = pd.read_csv(csv_path, index_col=index_col)
         self.df.index = self.df.index.astype(str)
-        self.input_features = input_features if input_features is not None else []
-        self.target_features = target_features if target_features is not None else []
+        self.input_features = (
+            input_features if input_features is not None else [])
+        self.target_features = (
+            target_features if target_features is not None else [])
+        self.additional_features = (
+            additional_features if additional_features is not None else [])
         if feature_filtering is not None:
             for feature, values in feature_filtering.items():
                 self.df = self.df[self.df[feature].isin(values)]

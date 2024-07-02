@@ -27,6 +27,7 @@ class SupervisedLModule(L.LightningModule):
             target_label: str,
             optimizer: type[optim.Optimizer] | None,
             lr_scheduler: type[torch.optim.lr_scheduler.LRScheduler],
+            weight_label: str = "weight",
             data_aug_gpu: Sequence[augmentation.AugmentationBase2D |
                                    augmentation.AugmentationBase3D] | None = None,
             data_aug_batch_size: int = -1,
@@ -47,6 +48,7 @@ class SupervisedLModule(L.LightningModule):
             target_label (str): Target label.
             optimizer (torch.optim.Optimizer): Optimizer to use.
             lr_scheduler (torch.optim.lr_scheduler.LRScheduler): Learning rate scheduler to use.
+            weight_label (str): Weight label. Default to None.
             data_aug_gpu (Sequence[kornia.AugmentationBase2D | kornia.AugmentationBase2D]): 
                 Data augmentation to use on GPU.
             data_aug_batch_size (int): Data augmentation batch size. If less than 0, the batch size is the 
@@ -83,6 +85,7 @@ class SupervisedLModule(L.LightningModule):
             self.torchmetric_names.append(val_name)
         self.input_label = input_label
         self.target_label = target_label
+        self.weight_label = weight_label
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
         data_aug_gpu = [] if data_aug_gpu is None else data_aug_gpu
@@ -118,6 +121,7 @@ class SupervisedLModule(L.LightningModule):
         self,
         pred: torch.Tensor,
         target: torch.Tensor,
+        weight: torch.Tensor | None,
         log_label: str
     ) -> torch.Tensor:
         """Compute loss.
@@ -139,10 +143,9 @@ class SupervisedLModule(L.LightningModule):
                 on_epoch=True,
                 on_step=False,
             )
-
         for l_name, w in zip(self.loss_names, self.loss_weights):
             l = self.__getattr__(l_name)
-            _loss = l(pred, target, log_fn=log_fn)
+            _loss = l(pred, target, weight=weight, log_fn=log_fn)
             self.log(
                 f"{log_label}.{l_name}",
                 _loss.item(),
@@ -197,12 +200,15 @@ class SupervisedLModule(L.LightningModule):
     ) -> STEP_OUTPUT:
         x = batch[self.input_label]
         target = batch[self.target_label]
+        weight = (batch[self.weight_label]
+                  if self.weight_label in batch else None)
         if self.flatten_target:
             target = target.flatten()
         pred = self.model(x)
         loss = self.compute_and_log_losses(
             pred=pred,
             target=target,
+            weight=weight,
             log_label=log_label
         )
         self.compute_and_log_metrics(
