@@ -45,19 +45,30 @@ class CSVDataset:
         """
         self.df = pd.read_csv(csv_path, index_col=index_col)
         self.df.index = self.df.index.astype(str)
+        if not self.df.index.is_unique:
+            raise ValueError("Index column is not unique.")
         self.input_features = (
             input_features if input_features is not None else [])
         self.target_features = (
             target_features if target_features is not None else [])
         self.additional_features = (
             additional_features if additional_features is not None else [])
+        self.df = self.df[
+            self.input_features
+            + self.target_features
+            + self.additional_features
+        ]
         if feature_filtering is not None:
             for feature, values in feature_filtering.items():
                 self.df = self.df[self.df[feature].isin(values)]
-        self.uids = self.df.index.tolist()
+        self.df: pd.DataFrame = self.df.dropna()
 
     def __len__(self) -> int:
         return len(self.uids)
+
+    @property
+    def uids(self) -> list[str]:
+        return self.df.index.tolist()
 
     @property
     def uid(self, index: int) -> str:

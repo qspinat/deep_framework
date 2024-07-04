@@ -11,14 +11,6 @@ import torchvision
 from . import base_dataset as bd
 from . import csv_dataset as cd
 
-LABEL_ENCODING = {
-    "CC": 0,
-    "EC": 1,
-    "HGSC": 2,
-    "LGSC": 3,
-    "MC": 4,
-}
-
 
 @gin.register(module="dataset")
 class ImageDataset(bd.BaseDataset):
@@ -73,12 +65,17 @@ class ImageDataset(bd.BaseDataset):
         self.suffixe = suffixe
         self.rescale = rescale
 
-        self._uids = set(self.csv_dataset.uids)
-        self._uids = self._uids & set([uid.split(suffixe)[0]
-                                       for uid in os.listdir(self.images_folder)])
+        self._uids = set(
+            [uid.split(suffixe)[0] for uid in os.listdir(self.images_folder)])
         if uids_txt is not None:
-            self._uids = (self._uids &
-                          set(np.loadtxt(os.path.join(db_path, uids_txt), dtype=str).tolist()))
+            self._uids = (
+                self._uids & set(np.loadtxt(os.path.join(db_path, uids_txt),
+                                            dtype=str).tolist())
+            )
+        if csv_dataset is not None:
+            self._uids = list(
+                set(self._uids) & set(csv_dataset.uids)
+            )
         self._uids = sorted(list(self._uids))
 
     def _load_image(self, uid: str) -> torch.Tensor:
@@ -112,10 +109,10 @@ class ImageDataset(bd.BaseDataset):
         uid = self.uids[index]
         # label
         labels = self.csv_dataset.df.loc[
-            self.csv_dataset.df.index == uid,
+            uid,
             self.csv_dataset.target_features].values[0].tolist()
-        labels = [LABEL_ENCODING[l] for l in labels]
-        data = {"target": torch.tensor(labels, dtype=int)}
+        data = {"target": torch.tensor([labels], dtype=float),
+                "uid": uid}
         # image
         x = self._load_image(uid)
         x = self.preprocess(x)

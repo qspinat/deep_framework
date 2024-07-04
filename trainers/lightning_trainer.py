@@ -2,10 +2,10 @@
 
 import gin
 import lightning as L
-import numpy as np
 from torch.utils import data
 
-from deep_framework import base_dataset
+from deep_framework.datasets import base_dataset
+from deep_framework.trainers import utils
 
 
 @gin.configurable(module="trainers")
@@ -48,22 +48,8 @@ class Trainer:
             seed (int): Seed. Default to 42.
         """
         L.seed_everything(seed)
-        if weight_positives:
-            ds = example_ds()
-            labels = ds.csv_dataset.df.loc[
-                ds.uids, ds.csv_dataset.target_features[0]].values
-            lab, counts = np.unique(labels, return_counts=True)
-            print("LAB COUNT", lab, counts)
-            weights = np.ones_like(labels)
-            for l, c in zip(lab, counts):
-                weights[labels == l] = 1/c
-            sampler = data.WeightedRandomSampler(
-                weights=weights,
-                num_samples=len(labels),
-                replacement=True,
-            )
-        else:
-            sampler = None
+        sampler = (utils.get_weighted_sampler(example_ds())
+                   if weight_positives else None)
         self.lightning_module = lightning_module()
         self.lighting_trainer = lightning_trainer()
         self.train_loader = train_loader(sampler=sampler)

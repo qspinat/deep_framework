@@ -10,6 +10,9 @@ import lightning as L
 from lightning.pytorch import loggers as L_loggers
 from lightning.pytorch import callbacks as L_callbacks
 
+from deep_framework.datasets import base_dataset
+from deep_framework.trainers import utils
+
 
 @gin.configurable(module="trainers")
 class KFoldTrainer:
@@ -37,11 +40,12 @@ class KFoldTrainer:
         model_checkpointer: type[L_callbacks.ModelCheckpoint],
         train_patients_txts: Sequence[str],
         val_patients_txts: Sequence[str],
-        train_dataset: type[data.Dataset],
+        train_dataset: type[base_dataset.BaseDataset],
         train_loader: type[data.DataLoader],
-        val_dataset: type[data.Dataset],
+        val_dataset: type[base_dataset.BaseDataset],
         val_loader: type[data.DataLoader],
         ckpt_path: str | None = None,
+        weight_positives: bool = False,
         seed: int = 42,
     ) -> None:
         """Constructor.
@@ -54,11 +58,13 @@ class KFoldTrainer:
             loggers (Sequence[type[L_loggers.Logger]]): Loggers.
             train_patients_txt (str): Paths to the train patients txt file.
             val_patients_txt (str): Paths to the validation patients txt file.
-            train_dataset (type[data.Dataset]): Train dataset.
+            train_dataset (type[base_dataset.BaseDataset]): Train dataset.
             train_loader (type[data.DataLoader]): Train dataloader.
-            val_dataset (type[data.Dataset]): Validation dataset. 
+            val_dataset (type[base_dataset.BaseDataset]): Validation dataset.
             val_loader (type[data.DataLoader]): Validation dataloader.
             ckpt_path (str | None): Checkpoint path. Default to None.
+            weight_positives (bool): Whether to weight positives or not.
+                Default to False.
             seed (int): Seed. Default to 42.
         """
         if len(val_patients_txts) != k_folds:
@@ -67,6 +73,7 @@ class KFoldTrainer:
         if len(train_patients_txts) != k_folds:
             raise ValueError(
                 "Number of training patients txts must be equal to k_folds.")
+        L.seed_everything(seed)
         self.k = k_folds
         self.root_dir = root_dir
         self.dirs = [
@@ -80,10 +87,13 @@ class KFoldTrainer:
                            [model_checkpointer(dirpath=d)]),
             )
             for d in self.dirs]
-        self.train_loaders = [
-            train_loader(dataset=train_dataset(patients_txt=t))
-            for t in train_patients_txts
-        ]
+        self.train_loaders = []
+        for t in train_patients_txts:
+            train_ds = train_dataset(patients_txt=t)
+            sampler = (utils.get_weighted_sampler(train_ds)
+                       if weight_positives else None)
+            self.train_loaders.append(
+                train_loader(dataset=train_ds), sampler=sampler)
         self.val_loaders = [
             val_loader(dataset=val_dataset(patients_txt=t))
             for t in val_patients_txts
