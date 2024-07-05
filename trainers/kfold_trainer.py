@@ -38,8 +38,8 @@ class KFoldTrainer:
         loggers: Sequence[type[L_loggers.Logger]],
         callbacks: list[type[L_callbacks.Callback]],
         model_checkpointer: type[L_callbacks.ModelCheckpoint],
-        train_patients_txts: Sequence[str],
-        val_patients_txts: Sequence[str],
+        train_uids_txts: Sequence[str],
+        val_uids_txts: Sequence[str],
         train_dataset: type[base_dataset.BaseDataset],
         train_loader: type[data.DataLoader],
         val_dataset: type[base_dataset.BaseDataset],
@@ -56,8 +56,8 @@ class KFoldTrainer:
             lightning_module (type[L.LightningModule]): Lightning module.
             lightning_trainer (type[L.Trainer]): Lightning trainer.
             loggers (Sequence[type[L_loggers.Logger]]): Loggers.
-            train_patients_txt (str): Paths to the train patients txt file.
-            val_patients_txt (str): Paths to the validation patients txt file.
+            train_uids_txt (str): Paths to the train patients txt file.
+            val_uids_txt (str): Paths to the validation patients txt file.
             train_dataset (type[base_dataset.BaseDataset]): Train dataset.
             train_loader (type[data.DataLoader]): Train dataloader.
             val_dataset (type[base_dataset.BaseDataset]): Validation dataset.
@@ -67,10 +67,10 @@ class KFoldTrainer:
                 Default to False.
             seed (int): Seed. Default to 42.
         """
-        if len(val_patients_txts) != k_folds:
+        if len(val_uids_txts) != k_folds:
             raise ValueError(
                 "Number of validation patients txts must be equal to k_folds.")
-        if len(train_patients_txts) != k_folds:
+        if len(train_uids_txts) != k_folds:
             raise ValueError(
                 "Number of training patients txts must be equal to k_folds.")
         L.seed_everything(seed)
@@ -88,15 +88,15 @@ class KFoldTrainer:
             )
             for d in self.dirs]
         self.train_loaders = []
-        for t in train_patients_txts:
-            train_ds = train_dataset(patients_txt=t)
+        for t in train_uids_txts:
+            train_ds = train_dataset(uids_txt=t)
             sampler = (utils.get_weighted_sampler(train_ds)
                        if weight_positives else None)
             self.train_loaders.append(
-                train_loader(dataset=train_ds), sampler=sampler)
+                train_loader(dataset=train_ds, sampler=sampler))
         self.val_loaders = [
-            val_loader(dataset=val_dataset(patients_txt=t))
-            for t in val_patients_txts
+            val_loader(dataset=val_dataset(uids_txt=t))
+            for t in val_uids_txts
         ]
         self.ckpt_path = ckpt_path
         self.seed = seed
