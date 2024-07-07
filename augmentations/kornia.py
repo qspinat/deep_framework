@@ -7,7 +7,8 @@ import torch
 
 from kornia import constants
 from kornia.augmentation import random_generator as rg
-from kornia.augmentation._3d.intensity import base
+from kornia.augmentation._3d.intensity import base as base_3d
+from kornia.augmentation._2d.intensity import base as base_2d
 from kornia.core import check
 from kornia.core import Tensor
 from kornia.enhance import adjust
@@ -16,7 +17,7 @@ from kornia.filters import kernels
 
 
 @gin.register(module="kornia")
-class RandomChannelDropout3D(base.IntensityAugmentationBase3D):
+class RandomChannelDropout3D(base_3d.IntensityAugmentationBase3D):
     """dropout the channels of a batch of multi-dimensional images."""
 
     def __init__(
@@ -152,7 +153,7 @@ def gaussian_blur3d(
 
 
 @gin.register(module="kornia")
-class RandomGaussianBlur3D(base.IntensityAugmentationBase3D):
+class RandomGaussianBlur3D(base_3d.IntensityAugmentationBase3D):
     r"""Apply gaussian blur given tensor image or a batch of tensor images
     randomly. The standard deviation is sampled for each instance.
 
@@ -229,7 +230,7 @@ def _randn_like(input: torch.Tensor, mean: float, std: float) -> torch.Tensor:
 
 
 @gin.register(module="kornia")
-class RandomGaussianNoise3D(base.IntensityAugmentationBase3D):
+class RandomGaussianNoise3D(base_3d.IntensityAugmentationBase3D):
     r"""Add gaussian noise to a batch of multi-dimensional images.
 
     .. image:: _static/img/RandomGaussianNoise.png
@@ -281,7 +282,7 @@ class RandomGaussianNoise3D(base.IntensityAugmentationBase3D):
 
 
 @gin.register(module="kornia")
-class RandomGamma3D(base.IntensityAugmentationBase3D):
+class RandomGamma3D(base_3d.IntensityAugmentationBase3D):
     r"""Apply a random transformation to the gamma of a tensor image.
 
     This implementation aligns PIL. Hence, the output is close to TorchVision.
@@ -337,3 +338,74 @@ class RandomGamma3D(base.IntensityAugmentationBase3D):
     ) -> torch.Tensor:
         identity = torch.eye(4, dtype=input.dtype, device=input.device)[None,]
         return identity.expand(input.shape[0], 4, 4)
+
+
+@gin.register(module="kornia")
+class RandomCircleCrop(base_2d.IntensityAugmentationBase2D):
+    """Randomly crop a circle of random size."""
+
+    def __init__(
+        self,
+        p: float = 0.5,
+        min_radius: float = 200,
+        max_radius: float = 300,
+        linear_fade: int | None = None,
+        same_on_batch: bool = False,
+        keepdim: bool = False,
+    ) -> None:
+        """Initialize the transform.
+
+        Args:
+            p(float): probability of applying the transformation.
+            min_radius(float): minimum radius of the circle.
+            max_radius(float): maximum radius of the circle.
+            linear_fade(int): radius of linear fade of the circle.
+            same_on_batch(bool): apply the same transformation across the batch.
+            keepdim(bool): whether to keep the output shape the same as input 
+                (True) or broadcast it to the batch form (False).
+        """
+        super().__init__(p=p, same_on_batch=same_on_batch, keepdim=keepdim)
+        self.min_radius = min_radius
+        self.max_radius = max_radius
+        self.linear_fade = linear_fade
+
+    def generate_parameters(self, batch_shape: Tuple[int, ...]) -> Dict[str, Tensor]:
+        B, *_ = batch_shape
+        radius = torch.randint(self.min_radius, self.max_radius, (B,))
+        return {"radius": radius}
+
+    def apply_transform(
+        self,
+        input: torch.Tensor,
+        params: dict[str, torch.Tensor],
+        flags: dict[str, Any],
+        transform: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        radius = params["radius"].to(input)
+        mask = create_circle_mask(input, radius, self.linear_fade)
+        input = input * mask
+        return input
+
+
+def create_circle_mask(
+    x: torch.Tensor, radius: torch.Tensor, linear_fade: int
+) -> torch.Tensor:
+    """Create a circle mask."""
+    B, C, H, W = x.shape
+    center = torch.tensor([H, W], device=x.device, dtype=x.dtype) / 2
+    # create grid
+    grid = torch.meshgrid(
+        torch.arange(H, device=x.device, dtype=x.dtype),
+        torch.arange(W, device=x.device, dtype=x.dtype),
+    )
+    grid = torch.stack(grid, dim=0).float()
+    grid = grid - center[:, None, None]
+    dist = torch.norm(grid, dim=0)
+    dist = dist[None, None].expand(B, 3, H, W)
+    # compute distance from center
+    # create mask
+    mask = (radius[:, None, None, None] - dist)
+    if linear_fade:
+        mask = mask/linear_fade
+    mask = mask.clamp(0, 1)
+    return mask

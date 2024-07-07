@@ -1,5 +1,6 @@
 from .kornia import (
     RandomChannelDropout3D,
+    RandomCircleCrop,
     RandomGamma3D,
     RandomGaussianBlur3D,
     RandomGaussianNoise3D

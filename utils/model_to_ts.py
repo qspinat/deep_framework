@@ -16,7 +16,7 @@ def load_model_state_dict(ckpt_path: str):
     for k, v in state_dict.items():
         if "model." not in k:
             continue
-        name = k.replace("model.", "")
+        name = k.replace("model.", "", 1)
         new_state_dict[name] = v
     return new_state_dict
 

@@ -19,7 +19,7 @@ def get_weighted_sampler(
         data.WeightedRandomSampler: Weighted sampler.
     """
     labels = dataset.csv_dataset.df.loc[
-        dataset.uids, dataset.csv_dataset.target_features[0]
+        dataset.uids, "sampling_class"
     ].values
     lab, counts = np.unique(labels, return_counts=True)
     weights = np.ones_like(labels)
