@@ -25,16 +25,17 @@ class SupervisedLModule(L.LightningModule):
             torchmetrics: Sequence[type[tm.Metric]],
             input_label: str,
             target_label: str,
+            *args,
+            tabular_label: str = "tabular",
+            weight_label: str = "weight",
             optimizer: type[optim.Optimizer] | None,
             lr_scheduler: type[torch.optim.lr_scheduler.LRScheduler],
-            weight_label: str = "weight",
             data_aug_gpu: Sequence[augmentation.AugmentationBase2D |
                                    augmentation.AugmentationBase3D] | None = None,
             data_aug_batch_size: int = -1,
             activation_metric: Callable = functools.partial(
                 torch.softmax, dim=-1),
             flatten_target: bool = False,
-            *args,
             **kwargs,
     ) -> None:
         """Constructor.
@@ -46,9 +47,10 @@ class SupervisedLModule(L.LightningModule):
             torchmetrics (Sequence[torchmetrics.Metric]): Torchmetrics to use.
             input_label (str): Input label.
             target_label (str): Target label.
+            tabular_label (str): Tabular label. Default to None.
+            weight_label (str): Weight label. Default to None.
             optimizer (torch.optim.Optimizer): Optimizer to use.
             lr_scheduler (torch.optim.lr_scheduler.LRScheduler): Learning rate scheduler to use.
-            weight_label (str): Weight label. Default to None.
             data_aug_gpu (Sequence[kornia.AugmentationBase2D | kornia.AugmentationBase2D]): 
                 Data augmentation to use on GPU.
             data_aug_batch_size (int): Data augmentation batch size. If less than 0, the batch size is the 
@@ -86,6 +88,7 @@ class SupervisedLModule(L.LightningModule):
         self.input_label = input_label
         self.target_label = target_label
         self.weight_label = weight_label
+        self.tabular_label = tabular_label
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
         data_aug_gpu = [] if data_aug_gpu is None else data_aug_gpu
@@ -202,9 +205,12 @@ class SupervisedLModule(L.LightningModule):
         target = batch[self.target_label]
         weight = (batch[self.weight_label]
                   if self.weight_label in batch else None)
+        inputs = [x]
+        if self.tabular_label in batch:
+            inputs.append(batch[self.tabular_label])
         if self.flatten_target:
             target = target.flatten()
-        pred = self.model(x)
+        pred = self.model(*inputs)
         loss = self.compute_and_log_losses(
             pred=pred,
             target=target,

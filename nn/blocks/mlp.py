@@ -73,7 +73,9 @@ class MLP(nn.Sequential):
         normalization = (
             nn.Identity if normalization is None else normalization)
         hidden_features = (
-            hidden_features if hidden_features is not None else in_features)
+            hidden_features if hidden_features is not None else [])
+        if isinstance(hidden_features, int):
+            hidden_features = [hidden_features]
         features = [in_features, *hidden_features, out_features]
 
         layers = [

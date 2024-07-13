@@ -29,10 +29,21 @@ class TimmModel(nn.Module):
             raise ValueError(
                 f"{model_name} not in timm model list: {timm.list_models()}")
         super().__init__(*args, **kwargs)
-        self.model = timm.create_model(
+        self.model: nn.Module = timm.create_model(
             model_name=model_name,
             **model_cfg
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, features: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        if features is not None:
+            return self.model(x, features)
         return self.model(x)
+
+    def forward_features(
+        self, x: torch.Tensor, features: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        if features is not None:
+            return self.model.forward_features(x, features)
+        return self.model.forward_features(x)
