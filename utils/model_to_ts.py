@@ -8,10 +8,10 @@ from torch import nn
 import torch.jit
 
 
-def load_model_state_dict(ckpt_path: str):
+def load_model_state_dict(ckpt_path: str, device: torch.device) -> OrderedDict:
     """Load model state dict from lightning checkpoint."""
     state_dict = torch.load(
-        ckpt_path, map_location=torch.device("cpu"))['state_dict']
+        ckpt_path, map_location=device)['state_dict']
     new_state_dict = OrderedDict()
     for k, v in state_dict.items():
         if "model." not in k:
@@ -21,12 +21,25 @@ def load_model_state_dict(ckpt_path: str):
     return new_state_dict
 
 
+def to_dtype(x: nn.Module | torch.Tensor, dtype: str) -> nn.Module:
+    """Convert model to dtype."""
+    if dtype == "fp32":
+        return x.float()
+    if dtype == "fp16":
+        return x.half()
+    if dtype == "bf16":
+        return x.to(torch.bfloat16)
+    return x
+
+
 @gin.configurable
 def model_to_ts(
     model: nn.Module,
     ckpt_path: str,
     ts_file: str,
     in_channels: int = 1,
+    device: str = "cpu",
+    dtype: str = "fp32",
     input_shape: tuple[int, int, int] = (64, 64, 64),
 ) -> None:
     """Convert model to torchscript.
@@ -37,10 +50,13 @@ def model_to_ts(
         ts_file (str): Path to save torchscript model.
         input_shape (tuple[int, int, int]): Input shape.
     """
-    model = model.eval()
-    state_dict = load_model_state_dict(ckpt_path)
+    device = torch.device(device)
+    model = model.eval().to(device)
+    state_dict = load_model_state_dict(ckpt_path, device)
     model.load_state_dict(state_dict)
-    inputs = torch.randn(2, in_channels, *input_shape)
+    model = to_dtype(model, dtype)
+    inputs = torch.randn(2, in_channels, *input_shape, device=device)
+    inputs = to_dtype(inputs, dtype)
     model = torch.jit.trace(model, inputs)
     torch.jit.save(model, ts_file)
 

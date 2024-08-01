@@ -46,6 +46,7 @@ class KFoldTrainer:
         val_loader: type[data.DataLoader],
         ckpt_path: str | None = None,
         weight_positives: bool = False,
+        weight_per_class: list[float] | None = None,
         seed: int = 42,
     ) -> None:
         """Constructor.
@@ -65,6 +66,9 @@ class KFoldTrainer:
             ckpt_path (str | None): Checkpoint path. Default to None.
             weight_positives (bool): Whether to weight positives or not.
                 Default to False.
+            weight_per_class (list[float] | None): Weights per class. If None,
+                the weights are calculated as 1/number of samples per class.
+                Default to None.
             seed (int): Seed. Default to 42.
         """
         if len(val_uids_txts) != k_folds:
@@ -90,7 +94,7 @@ class KFoldTrainer:
         self.train_loaders = []
         for t in train_uids_txts:
             train_ds = train_dataset(uids_txt=t)
-            sampler = (utils.get_weighted_sampler(train_ds)
+            sampler = (utils.get_weighted_sampler(train_ds, weight_per_class)
                        if weight_positives else None)
             self.train_loaders.append(
                 train_loader(dataset=train_ds, sampler=sampler))

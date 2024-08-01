@@ -326,7 +326,7 @@ class ConvNeXtStage(nn.Module):
                 kernel_size=stride,
                 stride=stride,
                 norm_layer=norm_layer,
-                tuning_mode=tuning_mode[0],
+                tuning_mode=tuning_mode[0] if tuning_mode else None,
                 in_features=in_features,
             )
         else:
@@ -639,7 +639,7 @@ def checkpoint_filter_fn(state_dict, model):
 
 
 def _create_convnext(
-        variant, pretrained=False, tuning_mode: bool = False, **kwargs):
+        variant, pretrained=False, tuning_mode: str | None = None, **kwargs):
     model = build_model_with_cfg(
         ConvNeXt, variant, pretrained,
         tuning_mode=tuning_mode,

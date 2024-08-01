@@ -181,7 +181,8 @@ class ResNet(nn.Module):
         x = torch.cat((x, rel_pos), dim=1)
         return x
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward_features(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass through the feature extractor."""
         if self.rel_position_input:
             x = self.cat_rel_pos(x)
         x = self.input_conv(x)
@@ -199,6 +200,10 @@ class ResNet(nn.Module):
         if isinstance(self.final_pool, transformers.ClassAttentionBlock):
             x = self.last_norm(x)[:, 0]
         x = x.flatten(1, -1)
+        return x
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.forward_features(x)
         x = self.fc(x)
         if self.act is not None:
             x = self.act(x)
