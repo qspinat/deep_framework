@@ -25,7 +25,7 @@ class NpyDataset(bd.BaseDataset):
         target_vol_keys (list[str]): Target volume keys.
         compressed_keys (list[str]): Keys to load as npz.
         csv_dataset (cd.CSVDataset | None): CSV dataset.
-        patients_txt (str | None): Path to a txt file containing the patients.
+        uids_txt (str | None): Path to a txt file containing the patients.
         preprocess (Sequence[tio.Transform] | None): Preprocessing transforms.
         data_aug (Sequence[tio.Transform] | None): Data augmentations.
 
@@ -40,7 +40,7 @@ class NpyDataset(bd.BaseDataset):
         target_vol_keys: list[str],
         compressed_keys: list[str] | None = None,
         csv_dataset: cd.CSVDataset | None = None,
-        patients_txt: str | None = None,
+        uids_txt: str | None = None,
         preprocess: (Sequence[kornia.augmentation.AugmentationBase2D |
                      kornia.augmentation.AugmentationBase2D] | None) = None,
         data_aug: (Sequence[kornia.augmentation.AugmentationBase2D |
@@ -87,9 +87,9 @@ class NpyDataset(bd.BaseDataset):
 
         self._uids = list(self._uids)
 
-        if patients_txt is not None:
+        if uids_txt is not None:
             patients = np.loadtxt(os.path.join(
-                db_path, patients_txt), dtype=str).tolist()
+                db_path, uids_txt), dtype=str).tolist()
             self._uids = [
                 uid for uid in self._uids if uid.split("_")[0] in patients
             ]

@@ -47,6 +47,7 @@ class SwinT(nn.Module):
     def __init__(
         self,
         in_channels: int,
+        out_channels: int = -1,
         embed_dim: int = 24,
         window_size: Sequence[int] = (4, 4, 4),
         patch_size: Sequence[int] = (4, 4, 4),
@@ -97,7 +98,8 @@ class SwinT(nn.Module):
                 depth=depths[i_layer],
                 num_heads=num_heads[i_layer],
                 window_size=self.window_size,
-                drop_path=dpr[sum(depths[:i_layer])                              : sum(depths[: i_layer + 1])],
+                drop_path=dpr[sum(depths[:i_layer])
+                                  : sum(depths[: i_layer + 1])],
                 mlp_ratio=mlp_ratio,
                 qkv_bias=qkv_bias,
                 drop=drop_rate,
@@ -125,6 +127,15 @@ class SwinT(nn.Module):
 
         self.patch_size = patch_size
         self.embed_dim = int(embed_dim * 2 ** self.num_layers)
+
+        if out_channels > 0:
+            self.fc = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(self.embed_dim, out_channels)
+            )
+
+        else:
+            self.fc = nn.Identity()
 
     def proj_out(self, x: torch.Tensor, normalize=False) -> torch.Tensor:
         if normalize:
@@ -170,4 +181,5 @@ class SwinT(nn.Module):
         }
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.forward_features(x)["x_norm_clstoken"]
+        x = self.forward_features(x)["x_norm_clstoken"]
+        return self.fc(x)

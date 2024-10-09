@@ -209,7 +209,7 @@ class SupervisedLModule(L.LightningModule):
         if self.tabular_label in batch:
             inputs.append(batch[self.tabular_label])
         if self.flatten_target:
-            target = target.flatten()
+            target = target.flatten(0, 1)
         pred = self.model(*inputs)
         loss = self.compute_and_log_losses(
             pred=pred,
